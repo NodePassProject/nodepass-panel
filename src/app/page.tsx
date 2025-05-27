@@ -10,7 +10,6 @@ import { EventLog } from '@/components/nodepass/EventLog';
 import { useApiConfig, type NamedApiConfig } from '@/hooks/use-api-key';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { BatchCreateInstancesCard } from '@/components/nodepass/BatchCreateInstancesCard'; 
 import { useToast } from '@/hooks/use-toast';
 
 
@@ -86,7 +85,7 @@ export default function HomePage() {
         {activeApiConfig ? (
           <div className="space-y-8">
             <CreateInstanceCard />
-            <BatchCreateInstancesCard />
+            {/* <BatchCreateInstancesCard /> Removed */}
             <InstanceList />
             <EventLog />
           </div>

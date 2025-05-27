@@ -21,7 +21,7 @@ export const optimizeInstanceSchema = z.object({
   performanceCharacteristics: z.string().min(3, "Performance characteristics are required."),
 });
 
-export const batchCreateInstancesSchema = z.object({
-  urls: z.string().min(1, "至少需要一个 URL。"),
-});
-
+// batchCreateInstancesSchema is removed as the feature is deleted.
+// export const batchCreateInstancesSchema = z.object({
+//   urls: z.string().min(1, "至少需要一个 URL。"),
+// });
