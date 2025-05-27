@@ -55,14 +55,13 @@ function parseTunnelAddr(urlString: string): string | null {
   } else if (querySeparatorIndex !== -1) {
     endOfTunnelAddr = querySeparatorIndex;
   } else {
-    // If no path or query separator, the rest of the string is the tunnel_addr
     return restOfString;
   }
   
   if (endOfTunnelAddr !== -1) {
     return restOfString.substring(0, endOfTunnelAddr);
   }
-  return restOfString; // Fallback if only one separator is present
+  return restOfString;
 }
 
 // Helper function to parse <target_addr> from NodePass URL string
@@ -74,7 +73,7 @@ function parseTargetAddr(urlString: string): string | null {
 
   const restOfString = urlString.substring(schemeIndex + schemeSeparator.length);
   const pathSeparatorIndex = restOfString.indexOf('/');
-  if (pathSeparatorIndex === -1) return null; // No target_addr if no path separator
+  if (pathSeparatorIndex === -1) return null; 
 
   const targetAndQuery = restOfString.substring(pathSeparatorIndex + 1);
   const querySeparatorIndex = targetAndQuery.indexOf('?');
@@ -82,7 +81,7 @@ function parseTargetAddr(urlString: string): string | null {
   if (querySeparatorIndex !== -1) {
     return targetAndQuery.substring(0, querySeparatorIndex);
   }
-  return targetAndQuery; // If no query params, the rest is target_addr
+  return targetAndQuery;
 }
 
 
@@ -136,7 +135,6 @@ export default function TopologyPage() {
           const serverPos = newPositions.get(server.id);
           const serverApiId = server.apiId;
           
-          // Corrected logic: Client's <tunnel_addr> connects to Server's <target_addr>
           if (serverTargetAddr && clientTunnelAddr === serverTargetAddr && serverPos) {
             newConnections.push({ 
               from: client.id, 
@@ -169,7 +167,6 @@ export default function TopologyPage() {
       let currentErrors = new Map<string, string>();
 
       for (const config of apiConfigsList) {
-        // Pass config.id to getApiRootUrl and getToken
         const apiRoot = getApiRootUrl(config.id);
         const token = getToken(config.id);
 
@@ -337,5 +334,6 @@ export default function TopologyPage() {
     </div>
   );
 }
+    
 
     
