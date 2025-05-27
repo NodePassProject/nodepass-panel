@@ -11,6 +11,7 @@ import { useApiConfig, type NamedApiConfig } from '@/hooks/use-api-key';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { BatchCreateInstancesCard } from '@/components/nodepass/BatchCreateInstancesCard'; 
+import { useToast } from '@/hooks/use-toast';
 
 
 export default function HomePage() {
@@ -22,27 +23,29 @@ export default function HomePage() {
     isLoading: isLoadingApiConfig,
     setActiveApiConfigId 
   } = useApiConfig();
+  const { toast } = useToast();
   
   const [isApiConfigDialogOpen, setIsApiConfigDialogOpen] = useState(false);
   const [editingApiConfig, setEditingApiConfig] = useState<NamedApiConfig | null>(null);
 
   useEffect(() => {
-    if (!isLoadingApiConfig && apiConfigsList.length === 0) {
+    if (!isLoadingApiConfig && apiConfigsList.length === 0 && !activeApiConfig) {
       setEditingApiConfig(null); 
       setIsApiConfigDialogOpen(true);
     }
-  }, [apiConfigsList, isLoadingApiConfig]);
+  }, [apiConfigsList, isLoadingApiConfig, activeApiConfig]);
 
   const handleSaveApiConfig = (configToSave: Omit<NamedApiConfig, 'id'> & { id?: string }) => {
     const savedConfig = addOrUpdateApiConfig(configToSave);
     setActiveApiConfigId(savedConfig.id); 
     setEditingApiConfig(null);
     setIsApiConfigDialogOpen(false);
+    toast({
+      title: configToSave.id ? '连接已更新' : '连接已添加',
+      description: `“${savedConfig.name}”已保存并设为活动连接。`,
+    });
   };
   
-  // This function is passed to Header to open the dialog for adding new or editing existing.
-  // If configToEdit is null/undefined, dialog opens in "create new" mode.
-  // If configToEdit is provided, dialog opens in "edit" mode for that config.
   const handleOpenApiConfigDialog = (configToEdit?: NamedApiConfig | null) => {
     setEditingApiConfig(configToEdit || null);
     setIsApiConfigDialogOpen(true);
@@ -50,6 +53,10 @@ export default function HomePage() {
 
   const handleLogout = () => { 
     clearActiveApiConfig();
+    toast({
+      title: '已断开连接',
+      description: '当前 API 连接已断开。',
+    });
   };
 
   if (isLoadingApiConfig) {
@@ -71,7 +78,7 @@ export default function HomePage() {
   return (
     <div className="flex flex-col min-h-screen bg-background">
       <Header 
-        onManageApiConfigs={handleOpenApiConfigDialog} // Pass the unified handler
+        onManageApiConfigs={handleOpenApiConfigDialog}
         hasActiveApiConfig={!!activeApiConfig} 
         onClearActiveConfig={handleLogout}
       />
@@ -111,7 +118,7 @@ export default function HomePage() {
         onOpenChange={setIsApiConfigDialogOpen}
         onSave={handleSaveApiConfig}
         currentConfig={editingApiConfig}
-        isEditing={!!editingApiConfig} // isEditing is true if editingApiConfig is not null
+        isEditing={!!editingApiConfig}
       />
       <footer className="py-6 text-center text-sm text-muted-foreground border-t">
         NodePass 管理器 &copy; {new Date().getFullYear()}

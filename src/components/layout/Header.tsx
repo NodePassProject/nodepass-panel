@@ -2,7 +2,8 @@
 "use client"
 
 import React from 'react';
-import { Moon, Sun, Settings, LogOut, PlusCircle, Edit3, Server, Check, Trash2 } from 'lucide-react';
+import Link from 'next/link';
+import { Moon, Sun, Settings, LogOut, PlusCircle, Edit3, Check, Trash2, ListTree } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,40 +13,39 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
   DropdownMenuLabel,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuPortal,
+  DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu"
 import { useApiConfig, type NamedApiConfig } from '@/hooks/use-api-key';
 
 interface HeaderProps {
-  onManageApiConfigs: (configToEdit?: NamedApiConfig | null) => void; // Updated prop
+  onManageApiConfigs: (configToEdit?: NamedApiConfig | null) => void;
   onClearActiveConfig?: () => void;
   hasActiveApiConfig: boolean;
 }
 
 export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiConfig }: HeaderProps) {
   const { setTheme, theme } = useTheme();
-  const { apiConfigsList, activeApiConfig, setActiveApiConfigId, deleteApiConfig } = useApiConfig();
+  const { apiConfigsList, activeApiConfig, setActiveApiConfigId } = useApiConfig();
 
   const handleSwitchApiConfig = (id: string) => {
     setActiveApiConfigId(id);
-  };
-
-  const handleDeleteApiConfig = (id: string, event: React.MouseEvent) => {
-    event.stopPropagation(); // Prevent DropdownMenuItem onClick from closing the menu if actions are inside
-    if (window.confirm(`您确定要删除连接 "${apiConfigsList.find(c=>c.id === id)?.name}" 吗？`)) {
-      deleteApiConfig(id);
-    }
   };
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
         <div className="flex items-center">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="mr-2 text-primary">
-            <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            <path d="M2 17L12 22L22 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            <path d="M2 12L12 17L22 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          <h1 className="text-2xl font-bold tracking-tight">NodePass 管理器</h1>
+          <Link href="/" className="flex items-center" aria-label="主页">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="mr-2 text-primary">
+              <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M2 17L12 22L22 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M2 12L12 17L22 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            <h1 className="text-2xl font-bold tracking-tight">NodePass 管理器</h1>
+          </Link>
            {activeApiConfig && (
             <span className="ml-2 text-xs px-2 py-1 bg-muted text-muted-foreground rounded-full hidden sm:inline-block">
               已连接到: {activeApiConfig.name}
@@ -75,53 +75,43 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
                 <span>添加新连接</span>
               </DropdownMenuItem>
 
+              <Link href="/connections" passHref legacyBehavior>
+                <DropdownMenuItem>
+                  <ListTree className="mr-2 h-4 w-4" />
+                  <span>管理所有连接</span>
+                </DropdownMenuItem>
+              </Link>
+
               {apiConfigsList.length > 0 && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuLabel>管理已有连接</DropdownMenuLabel>
-                  <div className="max-h-60 overflow-y-auto"> {/* Scrollable if many configs */}
-                    {apiConfigsList.map(config => (
-                      <DropdownMenuItem key={config.id} className="flex justify-between items-center pr-1">
-                        <div 
-                          className="flex items-center flex-grow cursor-pointer mr-2" 
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                     <Check className="mr-2 h-4 w-4" />
+                    <span>切换活动连接</span>
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuPortal>
+                    <DropdownMenuSubContent className="max-h-60 overflow-y-auto">
+                      {apiConfigsList.map(config => (
+                        <DropdownMenuItem 
+                          key={config.id} 
                           onClick={() => handleSwitchApiConfig(config.id)}
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={(e) => e.key === 'Enter' && handleSwitchApiConfig(config.id)}
+                          disabled={activeApiConfig?.id === config.id}
                         >
                           {activeApiConfig?.id === config.id && <Check className="mr-2 h-4 w-4 text-green-500" />}
                           <span className={`truncate ${activeApiConfig?.id !== config.id ? 'ml-6' : ''}`}>{config.name}</span>
-                        </div>
-                        <div className="flex items-center shrink-0">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-7 w-7"
-                            onClick={() => onManageApiConfigs(config)}
-                            aria-label={`编辑连接 ${config.name}`}
-                          >
-                            <Edit3 className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-7 w-7 text-destructive hover:text-destructive/80"
-                            onClick={(e) => handleDeleteApiConfig(config.id, e)}
-                            aria-label={`删除连接 ${config.name}`}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </DropdownMenuItem>
-                    ))}
-                  </div>
-                </>
+                        </DropdownMenuItem>
+                      ))}
+                       {apiConfigsList.length === 0 && (
+                        <DropdownMenuItem disabled>无已保存连接</DropdownMenuItem>
+                      )}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuPortal>
+                </DropdownMenuSub>
               )}
-
+              
               {hasActiveApiConfig && onClearActiveConfig && (
                  <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={onClearActiveConfig}>
+                  <DropdownMenuItem onClick={onClearActiveConfig} className="text-destructive hover:!text-destructive focus:!text-destructive">
                       <LogOut className="mr-2 h-4 w-4" />
                       <span>断开当前连接</span>
                   </DropdownMenuItem>
