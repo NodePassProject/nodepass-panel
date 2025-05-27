@@ -120,13 +120,15 @@ export function InstanceList() {
   const renderSkeletons = () => (
     Array.from({ length: 3 }).map((_, i) => (
       <TableRow key={`skeleton-${i}`}>
-        <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-        <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-        <TableCell><Skeleton className="h-4 w-20" /></TableCell>
-        <TableCell><Skeleton className="h-4 w-40" /></TableCell>
-        <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-        <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-        <TableCell><Skeleton className="h-4 w-24" /></TableCell> {/* Adjusted for new button */}
+        {[
+          <TableCell key={`skc1-${i}`}><Skeleton className="h-4 w-24" /></TableCell>,
+          <TableCell key={`skc2-${i}`}><Skeleton className="h-4 w-16" /></TableCell>,
+          <TableCell key={`skc3-${i}`}><Skeleton className="h-4 w-20" /></TableCell>,
+          <TableCell key={`skc4-${i}`}><Skeleton className="h-4 w-40" /></TableCell>,
+          <TableCell key={`skc5-${i}`}><Skeleton className="h-4 w-16" /></TableCell>,
+          <TableCell key={`skc6-${i}`}><Skeleton className="h-4 w-16" /></TableCell>,
+          <TableCell key={`skc7-${i}`}><Skeleton className="h-4 w-24" /></TableCell>
+        ]}
       </TableRow>
     ))
   );
