@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { KeyRound } from 'lucide-react';
-import type { ApiConfig } from '@/hooks/use-api-key'; // Renamed from use-api-key to use-api-config effectively
+import type { ApiConfig } from '@/hooks/use-api-key';
 
 interface ApiConfigDialogProps {
   open: boolean;
@@ -30,7 +30,7 @@ export function ApiConfigDialog({ open, onOpenChange, onSave, currentConfig }: A
 
   useEffect(() => {
     if (open) {
-      setApiUrlInput(currentConfig?.apiUrl || '');
+      setApiUrlInput(currentConfig?.apiUrl || 'http://localhost:3000');
       setTokenInput(currentConfig?.token || '');
       setPrefixPathInput(currentConfig?.prefixPath || '');
     }
@@ -48,6 +48,10 @@ export function ApiConfigDialog({ open, onOpenChange, onSave, currentConfig }: A
     }
   };
 
+  const displayApiUrl = apiUrlInput || "http://[2a12::1]:3134";
+  const displayPrefixPath = prefixPathInput ? `/${prefixPathInput.replace(/^\/+|\/+$/g, '')}` : "/api";
+
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -59,7 +63,7 @@ export function ApiConfigDialog({ open, onOpenChange, onSave, currentConfig }: A
             </DialogTitle>
             <DialogDescription>
               输入您的 NodePass API URL、令牌和可选的前缀路径。这些信息将存储在您的浏览器本地。
-              API 端点版本固定为 v1 (例如: {apiUrl}{prefixPath}/v1/*)。
+              API 端点版本固定为 v1 (例如: {displayApiUrl}{displayPrefixPath}/v1/*)。
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
