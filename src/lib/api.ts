@@ -54,11 +54,10 @@ export const nodePassApi = {
     request<void>(`${apiRootUrl}/v1/instances/${id}`, { method: 'DELETE' }, token),
 };
 
-// This function provides the URL for the event stream, including the /v1 path segment.
-// The EventSource in the client will connect to our Next.js proxy,
-// which will then call this target URL with proper authentication.
+// This function provides the URL for the event stream.
+// It's up to the consumer (e.g., EventSource) to handle connection and authentication.
+// Standard EventSource cannot send custom headers like X-API-Key.
 export const getEventsUrl = (apiRootUrl: string): string => {
   if (!apiRootUrl) throw new Error("apiRootUrl is required to get events URL");
-  return `${apiRootUrl}/v1/events`;
+  return `${apiRootUrl}/v1/events`; // Includes /v1 for the events endpoint
 };
-
