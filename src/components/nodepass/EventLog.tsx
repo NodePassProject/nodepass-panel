@@ -17,10 +17,7 @@ export function EventLog() {
 
   useEffect(() => {
     const apiRoot = getApiRootUrl();
-    // Token is retrieved but not directly used by EventSource here,
-    // as EventSource cannot send custom headers like X-API-Key.
-    // The server would need to support another auth method (e.g., query param, cookie) for direct EventSource auth.
-    const currentToken = getToken(); 
+    const currentToken = getToken(); // Token is available but EventSource cannot send it as a header directly
 
     if (!apiConfig || !apiRoot) {
       setEvents([{ type: 'log', data: 'API 配置未设置或不完整。事件流已禁用。', timestamp: new Date().toISOString() }]);
@@ -31,17 +28,16 @@ export function EventLog() {
       return;
     }
 
-    // Construct the target NodePass events URL directly.
-    const directEventsUrl = getEventsUrl(apiRoot);
+    const directEventsUrl = getEventsUrl(apiRoot, currentToken); // Pass token for potential query param (though server might not use it)
     
     const initialLogMessage = `正在直接初始化事件流到 ${directEventsUrl}... (注意：EventSource 无法发送 X-API-Key 进行认证，如果服务器需要，可能会失败)`;
+    // Clear previous events and set initial log message
     setEvents([{ type: 'log', data: initialLogMessage, timestamp: new Date().toISOString() }]);
 
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
     }
 
-    // EventSource connects directly to the NodePass API events endpoint.
     const newEventSource = new EventSource(directEventsUrl.toString());
     eventSourceRef.current = newEventSource;
 
@@ -49,13 +45,42 @@ export function EventLog() {
       setEvents((prevEvents) => [{ type: 'log', data: `事件流已直接连接。等待事件... (目标: ${directEventsUrl})`, timestamp: new Date().toISOString() }, ...prevEvents.filter(e => e.data !== initialLogMessage)]);
     };
 
-    newEventSource.onmessage = (event) => {
+    // Listen for named 'instance' events
+    newEventSource.addEventListener('instance', (event) => {
       try {
-        const newEventData = JSON.parse(event.data);
+        const serverEventPayload = JSON.parse(event.data as string);
+
+        let frontendEventType: InstanceEvent['type'];
+        let frontendEventData: any;
+
+        switch (serverEventPayload.type) {
+          case 'initial': // Assuming 'initial' means a new instance is reported
+            frontendEventType = 'instance_created';
+            frontendEventData = serverEventPayload.instance;
+            break;
+          case 'update':
+            frontendEventType = 'instance_updated';
+            frontendEventData = serverEventPayload.instance;
+            break;
+          case 'delete':
+            frontendEventType = 'instance_deleted';
+            frontendEventData = serverEventPayload.instance;
+            break;
+          case 'log':
+            frontendEventType = 'log';
+            frontendEventData = `[实例ID: ${serverEventPayload.instance?.id || 'N/A'}] ${serverEventPayload.logs}`;
+            break;
+          default:
+            console.warn("未知服务器事件类型:", serverEventPayload.type, serverEventPayload);
+            frontendEventType = 'log'; // Fallback for unknown server types
+            frontendEventData = serverEventPayload; 
+            break;
+        }
+
         const newEvent: InstanceEvent = {
-          type: newEventData.type || 'log',
-          data: newEventData.data || newEventData,
-          timestamp: newEventData.timestamp || new Date().toISOString()
+          type: frontendEventType,
+          data: frontendEventData,
+          timestamp: serverEventPayload.time || new Date().toISOString(),
         };
         setEvents((prevEvents) => [newEvent, ...prevEvents.slice(0, 99)]);
       } catch (error) {
@@ -63,7 +88,19 @@ export function EventLog() {
         const errorEvent: InstanceEvent = { type: 'log', data: `解析事件错误: ${event.data}`, timestamp: new Date().toISOString() };
         setEvents((prevEvents) => [errorEvent, ...prevEvents.slice(0, 99)]);
       }
+    });
+    
+    // Fallback for generic messages, though likely not used if server sends named events
+    newEventSource.onmessage = (event) => {
+        console.log("收到通用 SSE 消息 (非 'instance' 事件):", event.data);
+        const genericEvent: InstanceEvent = {
+          type: 'log',
+          data: `通用消息: ${event.data}`,
+          timestamp: new Date().toISOString()
+        };
+        setEvents((prevEvents) => [genericEvent, ...prevEvents.slice(0, 99)]);
     };
+
 
     newEventSource.onerror = (event: Event) => { 
       console.error(
@@ -82,6 +119,7 @@ export function EventLog() {
       }
 
       const errorEventLog: InstanceEvent = { type: 'log', data: errorMessage, timestamp: new Date().toISOString() };
+      // Avoid adding duplicate error messages if they are rapidly occurring
       setEvents((prevEvents) => {
         if (prevEvents.length > 0 && prevEvents[0].data === errorMessage && prevEvents[0].type === 'log') {
           return prevEvents;
@@ -132,7 +170,7 @@ export function EventLog() {
                 </Badge>
                 <span className="text-muted-foreground">{new Date(event.timestamp).toLocaleTimeString('zh-CN')}</span>
               </div>
-              <p className="mt-1 font-mono break-all">{typeof event.data === 'object' ? JSON.stringify(event.data) : String(event.data)}</p>
+              <p className="mt-1 font-mono break-all">{typeof event.data === 'object' ? JSON.stringify(event.data, null, 2) : String(event.data)}</p>
             </div>
           ))}
         </ScrollArea>
@@ -140,3 +178,4 @@ export function EventLog() {
     </Card>
   );
 }
+
