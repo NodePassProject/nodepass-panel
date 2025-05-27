@@ -34,7 +34,6 @@ interface Connection {
   type: 'intra-api' | 'inter-api'; // Type of connection
 }
 
-// Helper function to parse <tunnel_addr> from NodePass URL string
 // scheme://<tunnel_addr>/<target_addr>?...
 function parseTunnelAddr(urlString: string): string | null {
   const schemeSeparator = "://";
@@ -55,16 +54,15 @@ function parseTunnelAddr(urlString: string): string | null {
   } else if (querySeparatorIndex !== -1) {
     endOfTunnelAddr = querySeparatorIndex;
   } else {
-    return restOfString;
+    return restOfString; // No / or ? after tunnel_addr
   }
   
   if (endOfTunnelAddr !== -1) {
     return restOfString.substring(0, endOfTunnelAddr);
   }
-  return restOfString;
+  return restOfString; // Should not happen if logic is correct
 }
 
-// Helper function to parse <target_addr> from NodePass URL string
 // scheme://<tunnel_addr>/<target_addr>?...
 function parseTargetAddr(urlString: string): string | null {
   const schemeSeparator = "://";
@@ -81,7 +79,7 @@ function parseTargetAddr(urlString: string): string | null {
   if (querySeparatorIndex !== -1) {
     return targetAndQuery.substring(0, querySeparatorIndex);
   }
-  return targetAndQuery;
+  return targetAndQuery; // No query parameters after target_addr
 }
 
 
@@ -135,6 +133,7 @@ export default function TopologyPage() {
           const serverPos = newPositions.get(server.id);
           const serverApiId = server.apiId;
           
+          // Corrected logic: Client's <tunnel_addr> connects to Server's <target_addr>
           if (serverTargetAddr && clientTunnelAddr === serverTargetAddr && serverPos) {
             newConnections.push({ 
               from: client.id, 
@@ -167,8 +166,8 @@ export default function TopologyPage() {
       let currentErrors = new Map<string, string>();
 
       for (const config of apiConfigsList) {
-        const apiRoot = getApiRootUrl(config.id);
-        const token = getToken(config.id);
+        const apiRoot = getApiRootUrl(config.id); // Pass config.id
+        const token = getToken(config.id);       // Pass config.id
 
         if (!apiRoot || !token) {
           currentErrors.set(config.id, `API 配置 "${config.name}" 不完整或无效。`);
@@ -194,9 +193,9 @@ export default function TopologyPage() {
   useEffect(() => {
     if (allInstances.length > 0) {
       const handleResize = () => {
-        setTimeout(calculateLayout, 150);
+        setTimeout(calculateLayout, 150); // Debounce or adjust timing
       };
-      const timer = setTimeout(calculateLayout, 150); 
+      const timer = setTimeout(calculateLayout, 150); // Initial calculation
 
       window.addEventListener('resize', handleResize);
       return () => {
@@ -259,10 +258,12 @@ export default function TopologyPage() {
       {fetchErrors.size > 0 && !globalError && (
         <div className="mb-4 space-y-2">
           {Array.from(fetchErrors.entries()).map(([apiId, errorMsg]) => (
-            <div key={apiId} className="text-destructive-foreground bg-destructive p-3 rounded-md text-sm flex items-center">
-              <AlertTriangle className="h-5 w-5 mr-2 shrink-0" />
-              {errorMsg}
-            </div>
+            apiId !== "global" && (
+              <div key={apiId} className="text-destructive-foreground bg-destructive p-3 rounded-md text-sm flex items-center">
+                <AlertTriangle className="h-5 w-5 mr-2 shrink-0" />
+                {errorMsg}
+              </div>
+            )
           ))}
         </div>
       )}
@@ -322,18 +323,16 @@ export default function TopologyPage() {
               </p>
             </div>
           ))}
-          {allInstances.length === 0 && fetchErrors.size === 0 && !isLoadingInstances && (
+          {allInstances.length === 0 && fetchErrors.size === 0 && !isLoadingInstances && apiConfigsList.length > 0 && (
              <p className="text-muted-foreground w-full text-center py-10">在所有配置的API中均未找到实例。</p>
           )}
         </div>
       </div>
        <div className="mt-4 p-3 bg-muted/50 rounded-md text-xs text-muted-foreground flex items-center">
         <Info className="h-4 w-4 mr-2 shrink-0 text-primary" />
-        拓扑连接是基于客户端 URL 中的 `<tunnel_addr>` 部分与服务器 URL 中的 `<target_addr>` 部分匹配来推断的。
+        拓扑连接是基于客户端 URL 中的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> 部分与服务器 URL 中的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;target_addr&gt;</code> 部分匹配来推断的。
       </div>
     </div>
   );
 }
-    
-
     
