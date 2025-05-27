@@ -8,7 +8,10 @@ export async function GET(request: NextRequest) {
   const token = searchParams.get('token');
 
   if (!targetUrl) {
-    return new Response('Missing targetUrl query parameter', { status: 400 });
+    return new Response('Missing targetUrl query parameter', { 
+      status: 400, 
+      headers: { 'Content-Type': 'text/plain' } 
+    });
   }
   if (!token) {
     // Allow connections without a token for flexibility, but log it.
@@ -17,32 +20,48 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Log the attempt, masking the token for security if it exists
     console.log(`Proxy: Attempting to connect to target event stream. URL: ${targetUrl}, Token: ${token ? 'Present (masked)' : 'Not Present'}`);
 
     const headers: HeadersInit = {
       'Accept': 'text/event-stream',
-      'Connection': 'keep-alive', // Explicitly set keep-alive
+      'Connection': 'keep-alive', 
     };
     if (token) {
       headers['X-API-Key'] = token;
     }
 
     const response = await fetch(targetUrl, {
-      method: 'GET', // Explicitly GET, though it's default for fetch
+      method: 'GET',
       headers: headers,
-      // signal: request.signal, // Consider if client disconnect propagation is needed and how to handle it robustly
+      // Consider if client disconnect propagation is needed.
+      // If using Next.js edge runtime, request.signal might not be directly usable
+      // or behave as expected without specific patterns.
+      // signal: request.signal 
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Proxy: Error from target event stream. Status: ${response.status}, URL: ${targetUrl}, Body: ${errorText}`);
-      return new Response(errorText || `Error fetching event stream: ${response.status}`, { status: response.status });
+      let errorResponseMessage = `Upstream target error: ${response.status} ${response.statusText}`;
+      try {
+        const bodyText = await response.text();
+        if (bodyText && bodyText.trim().length > 0) {
+            errorResponseMessage = bodyText; // Prefer detailed error from upstream if available
+        }
+      } catch (e) {
+        console.warn(`Proxy: Could not read error body as text when target responded with ${response.status}. Upstream status: ${response.statusText}. Error reading body: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      console.error(`Proxy: Error from target event stream. Status: ${response.status}, URL: ${targetUrl}, Response Body/Message: "${errorResponseMessage}"`);
+      return new Response(errorResponseMessage, { 
+        status: response.status, // Propagate upstream status
+        headers: { 'Content-Type': 'text/plain' } 
+      });
     }
 
     if (!response.body) {
       console.error(`Proxy: ReadableStream not available from target. URL: ${targetUrl}`);
-      return new Response('ReadableStream not available from target', { status: 500 });
+      return new Response('ReadableStream not available from target', { 
+        status: 500,
+        headers: { 'Content-Type': 'text/plain' } 
+      });
     }
     
     const readableStream = new ReadableStream({
@@ -53,17 +72,17 @@ export async function GET(request: NextRequest) {
         function push() {
           reader.read().then(({ done, value }) => {
             if (done) {
-              console.log('Proxy: Target stream closed. URL:', targetUrl);
+              console.log('Proxy: Target stream closed by upstream. URL:', targetUrl);
               controller.close();
               return;
             }
             const chunk = decoder.decode(value, { stream: true });
-            // console.log('Proxy: received chunk from target:', chunk); // Potentially very verbose
+            // console.log('Proxy: received chunk from target:', chunk); // Uncomment for verbose chunk logging
             controller.enqueue(new TextEncoder().encode(chunk));
             push();
           }).catch(error => {
-            console.error('Proxy: Error reading from target stream. URL:', targetUrl, 'Error:', error);
-            controller.error(error);
+            console.error('Proxy: Error reading from target stream during push(). URL:', targetUrl, 'Error:', error);
+            controller.error(error); // Signal error to the client EventSource
           });
         }
         push();
@@ -79,7 +98,11 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Proxy: Unexpected error in event proxy. URL:', targetUrl, 'Error:', error);
-    return new Response(`Error in event proxy: ${error instanceof Error ? error.message : 'Unknown error'}`, { status: 500 });
+    // This catches errors from the fetch call itself (e.g., network, DNS) or any other unexpected error.
+    console.error('Proxy: Unexpected error in event proxy handler. URL (target):', targetUrl, 'Error:', error);
+    return new Response(`Error in event proxy: ${error instanceof Error ? error.message : 'Unknown server error'}`, { 
+      status: 500,
+      headers: { 'Content-Type': 'text/plain' }  
+    });
   }
 }
