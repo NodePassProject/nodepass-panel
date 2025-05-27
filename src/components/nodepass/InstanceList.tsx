@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Table,
   TableBody,
@@ -13,17 +13,17 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertTriangle, Eye, Trash2, Wand2, ArrowDown, ArrowUp, Server, Smartphone, Search, Pencil } from 'lucide-react'; // Added Pencil
-import type { Instance, UpdateInstanceRequest, ModifyInstanceConfigRequest } from '@/types/nodepass'; // Added ModifyInstanceConfigRequest
+import { AlertTriangle, Eye, Trash2, Wand2, ArrowDown, ArrowUp, Server, Smartphone, Search, Pencil } from 'lucide-react';
+import type { Instance, UpdateInstanceRequest } from '@/types/nodepass';
 import { InstanceStatusBadge } from './InstanceStatusBadge';
 import { InstanceControls } from './InstanceControls';
 import { DeleteInstanceDialog } from './DeleteInstanceDialog';
 import { InstanceDetailsModal } from './InstanceDetailsModal';
 import { OptimizeInstanceDialog } from './OptimizeInstanceDialog';
-import { ModifyInstanceDialog } from './ModifyInstanceDialog'; // Added ModifyInstanceDialog
+import { ModifyInstanceDialog } from './ModifyInstanceDialog';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { nodePassApi, getEventsUrl } from '@/lib/api';
+import { nodePassApi } from '@/lib/api';
 import { useApiConfig } from '@/hooks/use-api-key';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
@@ -40,12 +40,12 @@ function formatBytes(bytes: number) {
 export function InstanceList() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { getApiRootUrl, getToken, apiConfig } = useApiConfig();
+  const { getApiRootUrl, getToken, activeApiConfig } = useApiConfig(); // Use activeApiConfig for conditional text
 
   const [selectedInstanceForDetails, setSelectedInstanceForDetails] = useState<Instance | null>(null);
   const [selectedInstanceForDelete, setSelectedInstanceForDelete] = useState<Instance | null>(null);
   const [selectedInstanceForOptimize, setSelectedInstanceForOptimize] = useState<Instance | null>(null);
-  const [selectedInstanceForModify, setSelectedInstanceForModify] = useState<Instance | null>(null); // State for modify dialog
+  const [selectedInstanceForModify, setSelectedInstanceForModify] = useState<Instance | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
   const apiRootUrl = getApiRootUrl();
@@ -54,15 +54,13 @@ export function InstanceList() {
   const { data: instances, isLoading: isLoadingInstances, error: instancesError } = useQuery<Instance[], Error>({
     queryKey: ['instances', apiRootUrl, token],
     queryFn: () => {
-      if (!apiRootUrl || !token) throw new Error("API 配置不可用。");
+      if (!apiRootUrl || !token) throw new Error("API 配置不可用或不完整。");
       return nodePassApi.getInstances(apiRootUrl, token);
     },
     enabled: !!apiRootUrl && !!token,
-    refetchInterval: 15000, 
+    refetchInterval: 15000,
   });
 
-  // The EventSource connection logic is in EventLog.tsx
-  // No need to duplicate SSE connection logic here. Query refetching handles updates.
 
   const updateInstanceMutation = useMutation({
     mutationFn: ({ instanceId, action }: { instanceId: string, action: UpdateInstanceRequest['action']}) => {
@@ -107,9 +105,6 @@ export function InstanceList() {
     },
   });
 
-  // Mutation for modifying instance configuration (URL) is handled within ModifyInstanceDialog
-  // or can be defined here if preferred and passed down.
-  // For simplicity, keeping it within ModifyInstanceDialog for now.
 
   const filteredInstances = instances?.filter(instance =>
     instance.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -119,7 +114,7 @@ export function InstanceList() {
 
   const renderSkeletons = () => (
     Array.from({ length: 3 }).map((_, i) => (
-      <TableRow key={`skeleton-${i}`}>
+       <TableRow key={`skeleton-${i}`}>
         {[
           <TableCell key={`skc1-${i}`}><Skeleton className="h-4 w-24" /></TableCell>,
           <TableCell key={`skc2-${i}`}><Skeleton className="h-4 w-16" /></TableCell>,
@@ -133,9 +128,8 @@ export function InstanceList() {
     ))
   );
 
-  if (!apiConfig && !isLoadingInstances) {
-     return null;
-  }
+  // This component should only be rendered if activeApiConfig is true (handled in HomePage)
+  // So, if apiRootUrl or token is missing here, it's an unexpected state.
 
   return (
     <Card className="shadow-lg mt-6">
@@ -199,8 +193,8 @@ export function InstanceList() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end items-center space-x-1">
-                        <InstanceControls 
-                            instance={instance} 
+                        <InstanceControls
+                            instance={instance}
                             onAction={(id, action) => updateInstanceMutation.mutate({ instanceId: id, action })}
                             isLoading={updateInstanceMutation.isPending && updateInstanceMutation.variables?.instanceId === instance.id}
                         />
@@ -226,8 +220,12 @@ export function InstanceList() {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center h-24"> {/* Adjusted colSpan */}
-                    {searchTerm ? "未找到与您搜索匹配的实例。" : apiConfig ? "无可用实例。" : "请先配置API。"}
+                  <TableCell colSpan={7} className="text-center h-24">
+                    {instancesError ? `加载实例时出错` : /* Error already shown above */
+                     searchTerm ? "未找到与您搜索匹配的实例。" :
+                     (apiRootUrl && token) ? "无可用实例。" :
+                     "请先选择或添加一个API连接。"
+                    }
                   </TableCell>
                 </TableRow>
               )}

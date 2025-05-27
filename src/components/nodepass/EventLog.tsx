@@ -12,15 +12,14 @@ import { getEventsUrl } from '@/lib/api';
 
 export function EventLog() {
   const [events, setEvents] = useState<InstanceEvent[]>([]);
-  const { apiConfig, getApiRootUrl, getToken } = useApiConfig();
+  const { activeApiConfig, getApiRootUrl } = useApiConfig(); // Use activeApiConfig to enable/disable
   const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
     const apiRoot = getApiRootUrl();
-    const currentToken = getToken(); // Token is available but EventSource cannot send it as a header directly
 
-    if (!apiConfig || !apiRoot) {
-      setEvents([{ type: 'log', data: 'API 配置未设置或不完整。事件流已禁用。', timestamp: new Date().toISOString() }]);
+    if (!activeApiConfig || !apiRoot) {
+      setEvents([{ type: 'log', data: 'API 连接未激活。事件流已禁用。', timestamp: new Date().toISOString() }]);
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
@@ -28,11 +27,9 @@ export function EventLog() {
       return;
     }
 
-    const directEventsUrl = getEventsUrl(apiRoot, currentToken); // Pass token for potential query param (though server might not use it)
+    const directEventsUrl = getEventsUrl(apiRoot); // No token in query for direct EventSource
     
-    const initialLogMessage = `正在直接初始化事件流到 ${directEventsUrl}... (注意：EventSource 无法发送 X-API-Key 进行认证，如果服务器需要，可能会失败)`;
-    // Clear previous events and set initial log message
-    setEvents([{ type: 'log', data: initialLogMessage, timestamp: new Date().toISOString() }]);
+    setEvents([{ type: 'log', data: `正在直接初始化事件流到 ${directEventsUrl}... (注意：EventSource 无法发送 X-API-Key 进行认证，如果服务器需要，可能会失败)`, timestamp: new Date().toISOString() }]);
 
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
@@ -42,11 +39,12 @@ export function EventLog() {
     eventSourceRef.current = newEventSource;
 
     newEventSource.onopen = () => {
-      setEvents((prevEvents) => [{ type: 'log', data: `事件流已直接连接。等待事件... (目标: ${directEventsUrl})`, timestamp: new Date().toISOString() }, ...prevEvents.filter(e => e.data !== initialLogMessage)]);
+      // Clear previous messages and set a clean "connected" message.
+      setEvents([{ type: 'log', data: `事件流已直接连接。等待事件... (目标: ${directEventsUrl})`, timestamp: new Date().toISOString() }]);
     };
 
-    // Listen for named 'instance' events
     newEventSource.addEventListener('instance', (event) => {
+      console.log('SSE "instance" event received from server:', event.data); // Log to confirm event reception
       try {
         const serverEventPayload = JSON.parse(event.data as string);
 
@@ -54,7 +52,7 @@ export function EventLog() {
         let frontendEventData: any;
 
         switch (serverEventPayload.type) {
-          case 'initial': // Assuming 'initial' means a new instance is reported
+          case 'initial':
             frontendEventType = 'instance_created';
             frontendEventData = serverEventPayload.instance;
             break;
@@ -72,25 +70,24 @@ export function EventLog() {
             break;
           default:
             console.warn("未知服务器事件类型:", serverEventPayload.type, serverEventPayload);
-            frontendEventType = 'log'; // Fallback for unknown server types
-            frontendEventData = serverEventPayload; 
+            frontendEventType = 'log'; 
+            frontendEventData = `未知事件 ${serverEventPayload.type}: ${JSON.stringify(serverEventPayload.data || serverEventPayload)}`;
             break;
         }
 
-        const newEvent: InstanceEvent = {
+        const newEventToLog: InstanceEvent = {
           type: frontendEventType,
           data: frontendEventData,
           timestamp: serverEventPayload.time || new Date().toISOString(),
         };
-        setEvents((prevEvents) => [newEvent, ...prevEvents.slice(0, 99)]);
+        setEvents((prevEvents) => [newEventToLog, ...prevEvents.slice(0, 99)]);
       } catch (error) {
         console.error("无法解析事件数据:", error, "原始数据:", event.data);
-        const errorEvent: InstanceEvent = { type: 'log', data: `解析事件错误: ${event.data}`, timestamp: new Date().toISOString() };
-        setEvents((prevEvents) => [errorEvent, ...prevEvents.slice(0, 99)]);
+        const errorEventToLog: InstanceEvent = { type: 'log', data: `解析事件错误: ${event.data}`, timestamp: new Date().toISOString() };
+        setEvents((prevEvents) => [errorEventToLog, ...prevEvents.slice(0, 99)]);
       }
     });
     
-    // Fallback for generic messages, though likely not used if server sends named events
     newEventSource.onmessage = (event) => {
         console.log("收到通用 SSE 消息 (非 'instance' 事件):", event.data);
         const genericEvent: InstanceEvent = {
@@ -100,7 +97,6 @@ export function EventLog() {
         };
         setEvents((prevEvents) => [genericEvent, ...prevEvents.slice(0, 99)]);
     };
-
 
     newEventSource.onerror = (event: Event) => { 
       console.error(
@@ -115,11 +111,12 @@ export function EventLog() {
       if (newEventSource.readyState === EventSource.CLOSED) {
         errorMessage = 'EventSource 连接已关闭。可能由于服务器端认证失败或网络问题。';
       } else if (newEventSource.readyState === EventSource.CONNECTING) {
-        errorMessage = 'EventSource 正在尝试连接/重新连接...';
+        // This state is normal during retries, avoid flooding logs if it's just retrying
+        // errorMessage = 'EventSource 正在尝试连接/重新连接...'; 
+        return; // Avoid logging during normal connection attempts
       }
 
       const errorEventLog: InstanceEvent = { type: 'log', data: errorMessage, timestamp: new Date().toISOString() };
-      // Avoid adding duplicate error messages if they are rapidly occurring
       setEvents((prevEvents) => {
         if (prevEvents.length > 0 && prevEvents[0].data === errorMessage && prevEvents[0].type === 'log') {
           return prevEvents;
@@ -135,7 +132,7 @@ export function EventLog() {
       eventSourceRef.current = null;
     };
 
-  }, [apiConfig, getApiRootUrl, getToken]);
+  }, [activeApiConfig, getApiRootUrl]); // Rerun when activeApiConfig or its derived URL changes
 
   const getBadgeText = (type: InstanceEvent['type']): string => {
     if (type.includes('created')) return '已创建';
@@ -162,7 +159,7 @@ export function EventLog() {
             <div key={index} className="mb-2 pb-2 border-b last:border-b-0 last:mb-0 text-xs">
               <div className="flex justify-between items-center">
                 <Badge variant={
-                    event.type.includes('created') ? 'default' : 
+                    event.type.includes('created') ? 'default' :
                     event.type.includes('updated') ? 'secondary' :
                     event.type.includes('deleted') ? 'destructive' : 'outline'
                 } className="capitalize text-xs py-0.5 px-1.5">
@@ -170,7 +167,7 @@ export function EventLog() {
                 </Badge>
                 <span className="text-muted-foreground">{new Date(event.timestamp).toLocaleTimeString('zh-CN')}</span>
               </div>
-              <p className="mt-1 font-mono break-all">{typeof event.data === 'object' ? JSON.stringify(event.data, null, 2) : String(event.data)}</p>
+              <p className="mt-1 font-mono break-all whitespace-pre-wrap">{typeof event.data === 'object' ? JSON.stringify(event.data, null, 2) : String(event.data)}</p>
             </div>
           ))}
         </ScrollArea>
@@ -178,4 +175,3 @@ export function EventLog() {
     </Card>
   );
 }
-
