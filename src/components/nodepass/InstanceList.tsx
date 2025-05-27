@@ -48,10 +48,10 @@ export function InstanceList() {
   const [selectedInstanceForModify, setSelectedInstanceForModify] = useState<Instance | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const activeApiConfigId = activeApiConfig?.id;
+  const activeApiConfigId = activeApiConfig?.id; // Get the ID of the active config
 
   const { data: instances, isLoading: isLoadingInstances, error: instancesError } = useQuery<Instance[], Error>({
-    queryKey: ['instances', activeApiConfigId],
+    queryKey: ['instances', activeApiConfigId], // Include activeApiConfigId in the queryKey
     queryFn: () => {
       if (!activeApiConfigId) throw new Error("没有活动的API配置ID。");
       const apiRoot = getApiRootUrl(activeApiConfigId);
@@ -59,7 +59,7 @@ export function InstanceList() {
       if (!apiRoot || !token) throw new Error("活动API配置不完整或无效。");
       return nodePassApi.getInstances(apiRoot, token);
     },
-    enabled: !!activeApiConfigId, // Only fetch if there's an active API config
+    enabled: !!activeApiConfigId, // Only fetch if there's an active API config ID
     refetchInterval: 15000,
   });
 
@@ -232,7 +232,12 @@ export function InstanceList() {
               ) : (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center h-24">
-                    { searchTerm ? "未找到与您搜索匹配的实例。" : "无可用实例。" }
+                    {searchTerm && (!filteredInstances || filteredInstances.length === 0)
+                      ? "未找到与您搜索匹配的实例。"
+                      : !activeApiConfigId
+                        ? "请先选择一个活动的 API 连接。"
+                        : "无可用实例。"
+                    }
                   </TableCell>
                 </TableRow>
               )}
@@ -269,3 +274,4 @@ export function InstanceList() {
     </Card>
   );
 }
+
