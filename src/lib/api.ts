@@ -54,11 +54,11 @@ export const nodePassApi = {
     request<void>(`${apiRootUrl}/v1/instances/${id}`, { method: 'DELETE' }, token),
 };
 
-// For EventSource, authentication using custom headers like X-API-Key is not possible directly from the browser.
-// This function provides the base URL for events.
-// The OpenAPI spec for /events indicates ApiKeyAuth (X-API-Key header).
-// Connecting directly via EventSource will likely fail authentication if the server strictly requires this header
-// and doesn't offer alternatives (e.g., query parameter, cookie).
+// This function provides the URL for the event stream, including the /v1 path segment.
+// The EventSource in the client will connect to our Next.js proxy,
+// which will then call this target URL with proper authentication.
 export const getEventsUrl = (apiRootUrl: string): string => {
-  return `${apiRootUrl}/events`; // Removed token query parameter.
+  if (!apiRootUrl) throw new Error("apiRootUrl is required to get events URL");
+  return `${apiRootUrl}/v1/events`;
 };
+
