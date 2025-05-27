@@ -54,15 +54,11 @@ export const nodePassApi = {
     request<void>(`${apiRootUrl}/v1/instances/${id}`, { method: 'DELETE' }, token),
 };
 
-// For EventSource, authentication using custom headers like X-API-Key is not possible.
-// The OpenAPI spec indicates /events uses X-API-Key.
+// For EventSource, authentication using custom headers like X-API-Key is not possible directly from the browser.
 // This function provides the base URL for events.
-// If the server has an alternative auth method for EventSource (e.g. cookies, or a non-standard query param),
-// that would need to be handled by the server.
+// The OpenAPI spec for /events indicates ApiKeyAuth (X-API-Key header).
+// Connecting directly via EventSource will likely fail authentication if the server strictly requires this header
+// and doesn't offer alternatives (e.g., query parameter, cookie).
 export const getEventsUrl = (apiRootUrl: string): string => {
-  // The token is NOT appended as a query parameter here because:
-  // 1. The OpenAPI spec for /events indicates ApiKeyAuth (X-API-Key header).
-  // 2. EventSource cannot send custom headers.
-  // If the server supports token-based auth via query for /events, it's a non-standard extension.
-  return `${apiRootUrl}/events`;
+  return `${apiRootUrl}/events`; // Removed token query parameter.
 };
