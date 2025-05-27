@@ -5,11 +5,10 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useApiConfig, type NamedApiConfig } from '@/hooks/use-api-key';
 import { nodePassApi } from '@/lib/api';
 import type { Instance } from '@/types/nodepass';
-import { AlertTriangle, Loader2, RefreshCw, Info, Network, ServerIcon, SmartphoneIcon } from 'lucide-react'; // Added Network, ServerIcon, SmartphoneIcon
+import { AlertTriangle, Loader2, RefreshCw, Info, Network } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge'; // Ensure Badge is imported
 
 interface InstanceWithApiDetails extends Instance {
   apiId: string;
@@ -100,36 +99,37 @@ export default function TopologyPage() {
     if (apiConfigsList.length === 0 || !svgContainerRef.current) return;
 
     const newApiNodes: ApiNode[] = [];
-    const svgRect = svgContainerRef.current.getBoundingClientRect();
-    const nodeWidth = 220; // Approximate width of an API node card
-    const nodeHeight = 100; // Approximate height
+    const svgRect = svgContainerRef.current.getBoundingClientRect(); // Get container dimensions for reference
+    const defaultNodeWidth = 220; 
+    const defaultNodeHeight = 100; 
     const padding = 50;
-    const nodesPerRow = Math.max(1, Math.floor((svgRect.width - padding) / (nodeWidth + padding)));
+    const nodesPerRow = Math.max(1, Math.floor((svgRect.width - padding) / (defaultNodeWidth + padding)));
 
 
     apiConfigsList.forEach((apiConfig, index) => {
       const el = nodeRefs.current.get(apiConfig.id);
-      if (el) {
+      if (el && svgContainerRef.current) {
          newApiNodes.push({
           id: apiConfig.id,
           name: apiConfig.name,
-          x: el.offsetLeft + el.offsetWidth / 2 - svgContainerRef.current!.scrollLeft,
-          y: el.offsetTop + el.offsetHeight / 2 - svgContainerRef.current!.scrollTop,
+          // Position relative to the scrollable container
+          x: el.offsetLeft + el.offsetWidth / 2 - svgContainerRef.current.scrollLeft,
+          y: el.offsetTop + el.offsetHeight / 2 - svgContainerRef.current.scrollTop,
           width: el.offsetWidth,
           height: el.offsetHeight,
         });
       } else {
-        // Fallback positioning if element not yet rendered (might happen on initial fast load)
-        // This simple grid might not be ideal but prevents errors.
+        // Fallback positioning if element not yet rendered or ref not available
+        // This simple grid might not be ideal but prevents errors if refs are slow to populate.
         const col = index % nodesPerRow;
         const row = Math.floor(index / nodesPerRow);
         newApiNodes.push({
             id: apiConfig.id,
             name: apiConfig.name,
-            x: col * (nodeWidth + padding) + padding + nodeWidth / 2,
-            y: row * (nodeHeight + padding) + padding + nodeHeight / 2,
-            width: nodeWidth,
-            height: nodeHeight,
+            x: col * (defaultNodeWidth + padding) + padding + defaultNodeWidth / 2,
+            y: row * (defaultNodeHeight + padding) + padding + defaultNodeHeight / 2,
+            width: defaultNodeWidth,
+            height: defaultNodeHeight,
         });
       }
     });
@@ -146,27 +146,29 @@ export default function TopologyPage() {
       if (!clientTunnelAddr) return;
 
       serverInstances.forEach(server => {
-        if (client.apiId === server.apiId) return; // Skip intra-API connections for this visualization
+        if (client.apiId === server.apiId) return; // Skip intra-API connections for this visualization for now
 
-        const serverTargetAddr = parseTargetAddr(server.url);
+        const serverTargetAddr = parseTargetAddr(server.url); // Server's target_addr
         if (!serverTargetAddr) return;
 
+        // Corrected logic: client's tunnel_addr links to server's target_addr
         if (clientTunnelAddr === serverTargetAddr) {
+          // Ensure link is between different APIs for this visualization
           const linkId = [client.apiId, server.apiId].sort().join('-');
           let link = linksMap.get(linkId);
           if (!link) {
             link = {
               id: linkId,
-              sourceApiId: client.apiId, // Or server.apiId, depends on how you want to draw
-              targetApiId: server.apiId,
+              sourceApiId: client.apiId, // The API config that owns the client
+              targetApiId: server.apiId, // The API config that owns the server
               connections: [],
             };
           }
           link.connections.push({ 
             clientInstanceId: client.id, 
             serverInstanceId: server.id,
-            clientApiName: client.apiName,
-            serverApiName: server.apiName,
+            clientApiName: client.apiName, // Name of the API config owning the client
+            serverApiName: server.apiName, // Name of the API config owning the server
           });
           linksMap.set(linkId, link);
         }
@@ -188,15 +190,15 @@ export default function TopologyPage() {
     
     setInterApiLinks(finalLinks);
 
-  }, [apiConfigsList, allInstances]);
+  }, [apiConfigsList, allInstances]); // Added apiConfigsList to dependencies
 
 
   useEffect(() => {
     const fetchAllData = async () => {
-      if (isLoadingApiConfig) return;
+      if (isLoadingApiConfig) return; // Wait for apiConfigsList to be ready
       
       setIsLoadingData(true);
-      setFetchErrors(new Map());
+      setFetchErrors(new Map()); // Clear previous errors
       
       if (apiConfigsList.length === 0) {
         setFetchErrors(prev => new Map(prev).set("global", "没有配置任何 API 连接。"));
@@ -210,9 +212,10 @@ export default function TopologyPage() {
       let combinedInstances: InstanceWithApiDetails[] = [];
       let currentErrors = new Map<string, string>();
 
+      // Iterate over ALL apiConfigsList
       for (const config of apiConfigsList) {
-        const apiRoot = getApiRootUrl(config.id);
-        const token = getToken(config.id);
+        const apiRoot = getApiRootUrl(config.id); // Pass ID here
+        const token = getToken(config.id);       // Pass ID here
 
         if (!apiRoot || !token) {
           currentErrors.set(config.id, `API 配置 "${config.name}" 不完整或无效。`);
@@ -231,27 +234,28 @@ export default function TopologyPage() {
       setAllInstances(combinedInstances);
       setFetchErrors(currentErrors);
       
-      // Initial API nodes setup based on configs (positions will be refined by calculateLayout)
+      // Set initial API nodes based on configs. Positions will be updated by calculateLayout after render.
       const initialApiNodes = apiConfigsList.map(config => ({
         id: config.id,
         name: config.name,
-        x: 0, y: 0, width: 200, height: 80 // Placeholder dimensions
+        x: 0, y: 0, width: 220, height: 100 // Placeholder, will be updated
       }));
       setApiNodes(initialApiNodes);
 
-      setIsLoadingData(false);
+      setIsLoadingData(false); // Data fetching is done
     };
 
     fetchAllData();
   }, [apiConfigsList, isLoadingApiConfig, getApiRootUrl, getToken]);
 
   useEffect(() => {
-     // Calculate layout once data is loaded and elements are potentially in DOM
-    if (!isLoadingData && apiConfigsList.length > 0 && allInstances.length >= 0) {
-        const timer = setTimeout(calculateLayout, 150); // Ensure DOM elements are available
+    // Calculate layout once data is loaded and elements are potentially in DOM
+    if (!isLoadingData && apiConfigsList.length > 0) {
+        // Delay to allow DOM elements to render and refs to be set
+        const timer = setTimeout(calculateLayout, 200); 
         
         const handleResize = () => {
-            setTimeout(calculateLayout, 150); 
+            setTimeout(calculateLayout, 200); 
         };
         window.addEventListener('resize', handleResize);
         
@@ -323,8 +327,9 @@ export default function TopologyPage() {
       <div 
         ref={svgContainerRef}
         className="relative border p-4 rounded-lg shadow-lg flex-grow bg-muted/20 overflow-auto"
-        style={{ minHeight: '500px' }}
+        style={{ minHeight: '500px' }} // Ensure container has a minimum size
       >
+        {/* SVG for drawing lines - ensure it covers the area */}
         <svg width="100%" height="100%" className="absolute top-0 left-0 pointer-events-none z-0" style={{minWidth: '800px', minHeight: '600px'}}>
           <defs>
             <marker id="arrowhead-inter-api" markerWidth="10" markerHeight="7" 
@@ -361,21 +366,22 @@ export default function TopologyPage() {
                   className="pointer-events-auto" // Allow text to be interactive if needed later
                   transform={`rotate(${angle * 180 / Math.PI}, ${textX}, ${textY})`}
                 >
-                  {link.connections.map(c => `${c.clientInstanceId.substring(0,4)}..->${c.serverInstanceId.substring(0,4)}..`).join(', ')}
-                  <title>{link.connections.map(c => `Client: ${c.clientInstanceId} (${c.clientApiName}) connects to Server: ${c.serverInstanceId} (${c.serverApiName})`).join('\n')}</title>
+                  {link.connections.map(c => `${c.clientInstanceId.substring(0,4)}..(${c.clientApiName.substring(0,3)})->${c.serverInstanceId.substring(0,4)}..(${c.serverApiName.substring(0,3)})`).join(', ')}
+                  <title>{link.connections.map(c => `Client: ${c.clientInstanceId} (API: ${c.clientApiName}) connects to Server: ${c.serverInstanceId} (API: ${c.serverApiName})`).join('\n')}</title>
                 </text>
               </g>
             );
           })}
         </svg>
 
+        {/* Container for API Config Nodes */}
         <div className="relative z-10 flex flex-wrap gap-6 p-4 items-start justify-around">
-          {apiConfigsList.map((apiConfig, index) => (
+          {apiConfigsList.map((apiConfig) => (
             <div
               key={apiConfig.id}
               id={`api-node-${apiConfig.id}`}
               ref={el => { if(el) nodeRefs.current.set(apiConfig.id, el); else nodeRefs.current.delete(apiConfig.id); }}
-              className="p-4 border rounded-lg shadow-md bg-card hover:shadow-lg transition-shadow cursor-default w-56"
+              className="p-4 border rounded-lg shadow-md bg-card hover:shadow-lg transition-shadow cursor-default w-60" // Increased width
               title={`API Name: ${apiConfig.name}\nAPI URL: ${apiConfig.apiUrl}${apiConfig.prefixPath ? '/' + apiConfig.prefixPath : ''}\nID: ${apiConfig.id}`}
             >
               <div className="flex items-center text-primary mb-2">
@@ -388,17 +394,18 @@ export default function TopologyPage() {
               <p className="text-xs text-muted-foreground break-all">
                 Prefix: {apiConfig.prefixPath || "/ (none)"}
               </p>
+              <Badge variant="outline" className="mt-2 text-xs">
+                ID: {apiConfig.id.substring(0, 8)}...
+              </Badge>
             </div>
           ))}
         </div>
       </div>
        <div className="mt-4 p-3 bg-muted/50 rounded-md text-xs text-muted-foreground flex items-center">
         <Info className="h-4 w-4 mr-2 shrink-0 text-primary" />
-        此拓扑图显示不同 API 配置之间的连接。连接基于客户端实例的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> 与另一 API 配置中服务器实例的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;target_addr&gt;</code> 匹配来推断。
+        此拓扑图显示不同 API 配置之间的连接。连接基于一个 API 配置中客户端实例的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> 与另一 API 配置中服务器实例的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;target_addr&gt;</code> 匹配来推断。
       </div>
     </div>
   );
 }
-    
-
     
