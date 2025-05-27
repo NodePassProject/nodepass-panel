@@ -3,7 +3,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Moon, Sun, Settings, LogOut, PlusCircle, Edit3, Check, Trash2, ListTree } from 'lucide-react';
+import { Moon, Sun, Settings, LogOut, PlusCircle, Edit3, Check, Trash2, ListTree, Network } from 'lucide-react'; // Added Network
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import {
@@ -19,9 +19,11 @@ import {
   DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu"
 import { useApiConfig, type NamedApiConfig } from '@/hooks/use-api-key';
+import { useToast } from '@/hooks/use-toast';
+import { useRouter } from 'next/navigation';
 
 interface HeaderProps {
-  onManageApiConfigs: (configToEdit?: NamedApiConfig | null) => void;
+  onManageApiConfigs: (configToEdit?: NamedApiConfig | null) => void; // To open dialog for add/edit
   onClearActiveConfig?: () => void;
   hasActiveApiConfig: boolean;
 }
@@ -29,9 +31,16 @@ interface HeaderProps {
 export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiConfig }: HeaderProps) {
   const { setTheme, theme } = useTheme();
   const { apiConfigsList, activeApiConfig, setActiveApiConfigId } = useApiConfig();
+  const { toast } = useToast();
+  const router = useRouter();
 
   const handleSwitchApiConfig = (id: string) => {
+    const newActiveConf = apiConfigsList.find(c => c.id === id);
     setActiveApiConfigId(id);
+     toast({
+      title: '活动连接已切换',
+      description: `现在已连接到 “${newActiveConf?.name}”。`,
+    });
   };
 
   return (
@@ -48,7 +57,7 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
           </Link>
            {activeApiConfig && (
             <span className="ml-2 text-xs px-2 py-1 bg-muted text-muted-foreground rounded-full hidden sm:inline-block">
-              已连接到: {activeApiConfig.name}
+              已连接: {activeApiConfig.name}
             </span>
           )}
         </div>
@@ -64,7 +73,7 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="用户设置">
+              <Button variant="ghost" size="icon" aria-label="应用设置">
                 <Settings className="h-5 w-5" />
               </Button>
             </DropdownMenuTrigger>
@@ -85,7 +94,7 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
               {apiConfigsList.length > 0 && (
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger>
-                     <Check className="mr-2 h-4 w-4" />
+                     <Check className="mr-2 h-4 w-4 text-primary" />
                     <span>切换活动连接</span>
                   </DropdownMenuSubTrigger>
                   <DropdownMenuPortal>
@@ -100,14 +109,21 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
                           <span className={`truncate ${activeApiConfig?.id !== config.id ? 'ml-6' : ''}`}>{config.name}</span>
                         </DropdownMenuItem>
                       ))}
-                       {apiConfigsList.length === 0 && (
-                        <DropdownMenuItem disabled>无已保存连接</DropdownMenuItem>
-                      )}
                     </DropdownMenuSubContent>
                   </DropdownMenuPortal>
                 </DropdownMenuSub>
               )}
               
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>可视化</DropdownMenuLabel>
+               <Link href="/topology" passHref legacyBehavior>
+                <DropdownMenuItem>
+                  <Network className="mr-2 h-4 w-4" />
+                  <span>连接拓扑图</span>
+                </DropdownMenuItem>
+              </Link>
+
+
               {hasActiveApiConfig && onClearActiveConfig && (
                  <>
                   <DropdownMenuSeparator />
@@ -124,3 +140,4 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
     </header>
   );
 }
+
