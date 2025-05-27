@@ -15,13 +15,13 @@ import type { CreateInstanceRequest } from '@/types/nodepass';
 import { PlusCircle } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { nodePassApi } from '@/lib/api';
-import { useApiKey } from '@/hooks/use-api-key';
+import { useApiConfig } from '@/hooks/use-api-key';
 
 
 export function CreateInstanceCard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { apiKey } = useApiKey();
+  const { getApiRootUrl, getToken } = useApiConfig();
 
   const form = useForm<z.infer<typeof createInstanceSchema>>({
     resolver: zodResolver(createInstanceSchema),
@@ -32,21 +32,23 @@ export function CreateInstanceCard() {
 
   const createInstanceMutation = useMutation({
     mutationFn: (data: CreateInstanceRequest) => {
-      if (!apiKey) throw new Error("API key is not available.");
-      return nodePassApi.createInstance(data, apiKey);
+      const apiRootUrl = getApiRootUrl();
+      const token = getToken();
+      if (!apiRootUrl || !token) throw new Error("API 配置不可用。");
+      return nodePassApi.createInstance(data, apiRootUrl, token);
     },
     onSuccess: () => {
       toast({
-        title: 'Instance Created',
-        description: 'The new instance has been created successfully.',
+        title: '实例已创建',
+        description: '新实例已成功创建。',
       });
       queryClient.invalidateQueries({ queryKey: ['instances'] });
       form.reset();
     },
     onError: (error: any) => {
       toast({
-        title: 'Error Creating Instance',
-        description: error.message || 'An unknown error occurred.',
+        title: '创建实例出错',
+        description: error.message || '发生未知错误。',
         variant: 'destructive',
       });
     },
@@ -61,10 +63,10 @@ export function CreateInstanceCard() {
       <CardHeader>
         <CardTitle className="flex items-center text-xl">
           <PlusCircle className="mr-2 h-6 w-6 text-primary" />
-          Create New Instance
+          创建新实例
         </CardTitle>
         <CardDescription>
-          Provide the command URL to set up a new NodePass instance.
+          提供命令 URL以设置新的 NodePass 实例。
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -75,11 +77,11 @@ export function CreateInstanceCard() {
               name="url"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel htmlFor="instance-url">Instance Command URL</FormLabel>
+                  <FormLabel htmlFor="instance-url">实例命令 URL</FormLabel>
                   <FormControl>
                     <Input
                       id="instance-url"
-                      placeholder="e.g., server://0.0.0.0:8080/example.com:80?tls=0"
+                      placeholder="例如：server://0.0.0.0:8080/example.com:80?tls=0"
                       {...field}
                       className="text-sm"
                     />
@@ -89,7 +91,7 @@ export function CreateInstanceCard() {
               )}
             />
             <Button type="submit" className="w-full sm:w-auto" disabled={createInstanceMutation.isPending}>
-              {createInstanceMutation.isPending ? 'Creating...' : 'Create Instance'}
+              {createInstanceMutation.isPending ? '创建中...' : '创建实例'}
             </Button>
           </form>
         </Form>

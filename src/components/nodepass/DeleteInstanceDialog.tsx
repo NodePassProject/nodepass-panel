@@ -35,20 +35,20 @@ export function DeleteInstanceDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete Instance</AlertDialogTitle>
+          <AlertDialogTitle>删除实例</AlertDialogTitle>
           <AlertDialogDescription>
-            Are you sure you want to delete instance <span className="font-semibold">{instance.id}</span>?
-            This action cannot be undone. The instance URL is <span className="font-semibold break-all">{instance.url}</span>.
+            您确定要删除实例 <span className="font-semibold">{instance.id}</span> 吗？
+            此操作无法撤销。实例 URL 为 <span className="font-semibold break-all">{instance.url}</span>。
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={isLoading}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel disabled={isLoading}>取消</AlertDialogCancel>
           <AlertDialogAction
             onClick={() => onConfirmDelete(instance.id)}
             disabled={isLoading}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
-            {isLoading ? 'Deleting...' : 'Delete'}
+            {isLoading ? '删除中...' : '删除'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

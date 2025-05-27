@@ -1,20 +1,18 @@
 
 import type { Instance, CreateInstanceRequest, UpdateInstanceRequest } from '@/types/nodepass';
 
-const API_BASE_URL = '/api/v1'; // Default, can be made configurable
-
 async function request<T>(
-  endpoint: string,
+  fullRequestUrl: string,
   options: RequestInit = {},
-  apiKey: string | null
+  token: string | null
 ): Promise<T> {
   const headers = new Headers(options.headers || {});
   headers.append('Content-Type', 'application/json');
-  if (apiKey) {
-    headers.append('X-API-Key', apiKey);
+  if (token) {
+    headers.append('X-API-Key', token); // The header name is still X-API-Key as per typical conventions
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  const response = await fetch(fullRequestUrl, {
     ...options,
     headers,
   });
@@ -26,7 +24,7 @@ async function request<T>(
     } catch (e) {
       errorBody = { message: response.statusText };
     }
-    const error = new Error(`API Error: ${response.status} ${errorBody?.message || response.statusText}`);
+    const error = new Error(`API 错误: ${response.status} ${errorBody?.message || response.statusText}`);
     (error as any).status = response.status;
     (error as any).body = errorBody;
     throw error;
@@ -40,18 +38,27 @@ async function request<T>(
 }
 
 export const nodePassApi = {
-  getInstances: (apiKey: string) => request<Instance[]>('/instances', {}, apiKey),
-  createInstance: (data: CreateInstanceRequest, apiKey: string) =>
-    request<Instance>('/instances', { method: 'POST', body: JSON.stringify(data) }, apiKey),
-  getInstance: (id: string, apiKey: string) => request<Instance>(`/instances/${id}`, {}, apiKey),
-  updateInstance: (id: string, data: UpdateInstanceRequest, apiKey: string) =>
-    request<Instance>(`/instances/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, apiKey),
-  deleteInstance: (id: string, apiKey: string) =>
-    request<void>(`/instances/${id}`, { method: 'DELETE' }, apiKey),
+  getInstances: (apiRootUrl: string, token: string) =>
+    request<Instance[]>(`${apiRootUrl}/v1/instances`, {}, token),
+  
+  createInstance: (data: CreateInstanceRequest, apiRootUrl: string, token: string) =>
+    request<Instance>(`${apiRootUrl}/v1/instances`, { method: 'POST', body: JSON.stringify(data) }, token),
+  
+  getInstance: (id: string, apiRootUrl: string, token: string) =>
+    request<Instance>(`${apiRootUrl}/v1/instances/${id}`, {}, token),
+  
+  updateInstance: (id: string, data: UpdateInstanceRequest, apiRootUrl: string, token: string) =>
+    request<Instance>(`${apiRootUrl}/v1/instances/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, token),
+  
+  deleteInstance: (id: string, apiRootUrl: string, token: string) =>
+    request<void>(`${apiRootUrl}/v1/instances/${id}`, { method: 'DELETE' }, token),
 };
 
-// Note: SSE /events endpoint requires special handling for authentication if X-API-Key header is strictly required.
-// Standard EventSource does not support custom headers. A workaround (e.g., API key via query param) would be needed.
-// For now, SSE functionality will be simulated or handled with this limitation in mind.
-
-export const getApiBaseUrl = () => API_BASE_URL;
+// For EventSource, authentication needs careful handling.
+// Standard EventSource cannot send custom headers like X-API-Key.
+// If the server supports token via query parameter (e.g., /events?token=YOUR_TOKEN), that could be a workaround.
+export const getEventsUrl = (apiRootUrl: string, token?: string | null): string => {
+  // If server supports token in query for SSE:
+  // return token ? `${apiRootUrl}/events?token=${token}` : `${apiRootUrl}/events`;
+  return `${apiRootUrl}/events`; // Current implementation assumes no query token auth for SSE
+};

@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -14,62 +14,87 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { KeyRound } from 'lucide-react';
+import type { ApiConfig } from '@/hooks/use-api-key'; // Renamed from use-api-key to use-api-config effectively
 
-interface ApiKeyDialogProps {
+interface ApiConfigDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (apiKey: string) => void;
-  currentApiKey?: string | null;
+  onSave: (config: ApiConfig) => void;
+  currentConfig?: ApiConfig | null;
 }
 
-export function ApiKeyDialog({ open, onOpenChange, onSave, currentApiKey }: ApiKeyDialogProps) {
-  const [apiKeyInput, setApiKeyInput] = useState(currentApiKey || '');
+export function ApiConfigDialog({ open, onOpenChange, onSave, currentConfig }: ApiConfigDialogProps) {
+  const [apiUrlInput, setApiUrlInput] = useState('');
+  const [tokenInput, setTokenInput] = useState('');
+  const [prefixPathInput, setPrefixPathInput] = useState('');
+
+  useEffect(() => {
+    if (open) {
+      setApiUrlInput(currentConfig?.apiUrl || '');
+      setTokenInput(currentConfig?.token || '');
+      setPrefixPathInput(currentConfig?.prefixPath || '');
+    }
+  }, [open, currentConfig]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (apiKeyInput.trim()) {
-      onSave(apiKeyInput.trim());
+    if (apiUrlInput.trim() && tokenInput.trim()) {
+      onSave({
+        apiUrl: apiUrlInput.trim(),
+        token: tokenInput.trim(),
+        prefixPath: prefixPathInput.trim() || null,
+      });
       onOpenChange(false);
     }
   };
 
-  React.useEffect(() => {
-    if (open) {
-        setApiKeyInput(currentApiKey || '');
-    }
-  }, [open, currentApiKey]);
-
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-md">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle className="flex items-center">
               <KeyRound className="mr-2 h-5 w-5 text-primary" />
-              API Key Configuration
+              API 配置
             </DialogTitle>
             <DialogDescription>
-              Enter your NodePass API key to access the manager. This key will be stored locally in your browser.
+              输入您的 NodePass API URL、令牌和可选的前缀路径。这些信息将存储在您的浏览器本地。
+              API 端点版本固定为 v1 (例如: {apiUrl}{prefixPath}/v1/*)。
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="api-key" className="text-right">
-                API Key
-              </Label>
+            <div className="space-y-1">
+              <Label htmlFor="api-url">API 接口地址</Label>
               <Input
-                id="api-key"
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                className="col-span-3"
-                placeholder="Enter your API key"
+                id="api-url"
+                value={apiUrlInput}
+                onChange={(e) => setApiUrlInput(e.target.value)}
+                placeholder="例如: http://localhost:3000 或 http://[2a12::1]:3134"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="token">令牌</Label>
+              <Input
+                id="token"
+                value={tokenInput}
+                onChange={(e) => setTokenInput(e.target.value)}
+                placeholder="输入您的令牌"
                 type="password"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="prefix-path">前缀路径 (可选)</Label>
+              <Input
+                id="prefix-path"
+                value={prefixPathInput}
+                onChange={(e) => setPrefixPathInput(e.target.value)}
+                placeholder="例如: api"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button type="submit" disabled={!apiKeyInput.trim()}>Save API Key</Button>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
+            <Button type="submit" disabled={!apiUrlInput.trim() || !tokenInput.trim()}>保存配置</Button>
           </DialogFooter>
         </form>
       </DialogContent>

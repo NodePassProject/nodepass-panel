@@ -28,7 +28,7 @@ export function InstanceControls({ instance, onAction, isLoading }: InstanceCont
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="h-8 w-8" disabled={isLoading}>
           <MoreVertical className="h-4 w-4" />
-          <span className="sr-only">Instance Actions</span>
+          <span className="sr-only">实例操作</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
@@ -37,21 +37,21 @@ export function InstanceControls({ instance, onAction, isLoading }: InstanceCont
           disabled={instance.status === 'running' || isLoading}
         >
           <Play className="mr-2 h-4 w-4" />
-          Start
+          启动
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => handleAction('stop')}
           disabled={instance.status === 'stopped' || isLoading}
         >
           <Square className="mr-2 h-4 w-4" />
-          Stop
+          停止
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => handleAction('restart')}
           disabled={isLoading}
         >
           <RotateCcw className="mr-2 h-4 w-4" />
-          Restart
+          重启
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

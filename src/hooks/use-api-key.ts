@@ -3,44 +3,62 @@
 
 import { useState, useEffect, useCallback } from 'react';
 
-const API_KEY_STORAGE_KEY = 'nodepass_api_key';
+const API_CONFIG_STORAGE_KEY = 'nodepass_api_config';
 
-export function useApiKey() {
-  const [apiKey, setApiKey] = useState<string | null>(null);
+export interface ApiConfig {
+  apiUrl: string;
+  token: string;
+  prefixPath: string | null;
+}
+
+export function useApiConfig() {
+  const [apiConfig, setApiConfig] = useState<ApiConfig | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     try {
-      const storedApiKey = localStorage.getItem(API_KEY_STORAGE_KEY);
-      if (storedApiKey) {
-        setApiKey(storedApiKey);
+      const storedConfig = localStorage.getItem(API_CONFIG_STORAGE_KEY);
+      if (storedConfig) {
+        setApiConfig(JSON.parse(storedConfig));
       }
     } catch (error) {
-      console.warn("Could not access localStorage for API key:", error);
-      // Handle environments where localStorage is not available or restricted
+      console.warn("无法从 localStorage 加载 API 配置:", error);
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  const saveApiKey = useCallback((newApiKey: string) => {
+  const saveApiConfig = useCallback((newConfig: ApiConfig) => {
     try {
-      localStorage.setItem(API_KEY_STORAGE_KEY, newApiKey);
-      setApiKey(newApiKey);
+      localStorage.setItem(API_CONFIG_STORAGE_KEY, JSON.stringify(newConfig));
+      setApiConfig(newConfig);
     } catch (error) {
-      console.error("Failed to save API key to localStorage:", error);
-      // Optionally, notify the user if saving fails
+      console.error("无法将 API 配置保存到 localStorage:", error);
     }
   }, []);
 
-  const clearApiKey = useCallback(() => {
+  const clearApiConfig = useCallback(() => {
     try {
-      localStorage.removeItem(API_KEY_STORAGE_KEY);
-      setApiKey(null);
+      localStorage.removeItem(API_CONFIG_STORAGE_KEY);
+      setApiConfig(null);
     } catch (error) {
-      console.error("Failed to clear API key from localStorage:", error);
+      console.error("无法从 localStorage 清除 API 配置:", error);
     }
   }, []);
 
-  return { apiKey, saveApiKey, clearApiKey, isLoading };
+  const getApiRootUrl = useCallback((): string | null => {
+    if (!apiConfig?.apiUrl) return null;
+    const { apiUrl, prefixPath } = apiConfig;
+    let base = apiUrl.replace(/\/+$/, ''); // 移除末尾斜杠
+    if (prefixPath && prefixPath.trim() !== '') {
+      base += `/${prefixPath.replace(/^\/+|\/+$/g, '').trim()}`; // 添加并清理prefixPath
+    }
+    return base;
+  }, [apiConfig]);
+
+  const getToken = useCallback((): string | null => {
+    return apiConfig?.token || null;
+  }, [apiConfig]);
+
+  return { apiConfig, saveApiConfig, clearApiConfig, isLoading, getApiRootUrl, getToken };
 }

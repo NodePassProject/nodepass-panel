@@ -16,28 +16,28 @@ export function InstanceStatusBadge({ status }: InstanceStatusBadgeProps) {
       return (
         <Badge variant="default" className="bg-green-500 hover:bg-green-600 text-white">
           <CheckCircle className="mr-1 h-3.5 w-3.5" />
-          Running
+          运行中
         </Badge>
       );
     case 'stopped':
       return (
         <Badge variant="secondary" className="bg-gray-500 hover:bg-gray-600 text-white">
           <XCircle className="mr-1 h-3.5 w-3.5" />
-          Stopped
+          已停止
         </Badge>
       );
     case 'error':
       return (
         <Badge variant="destructive">
           <AlertTriangle className="mr-1 h-3.5 w-3.5" />
-          Error
+          错误
         </Badge>
       );
     default:
       return (
         <Badge variant="outline">
           <HelpCircle className="mr-1 h-3.5 w-3.5" />
-          Unknown
+          未知
         </Badge>
       );
   }

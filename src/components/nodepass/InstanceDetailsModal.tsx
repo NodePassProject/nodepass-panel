@@ -35,22 +35,22 @@ export function InstanceDetailsModal({ instance, open, onOpenChange }: InstanceD
 
   const detailItems = [
     { label: "ID", value: instance.id, icon: <Fingerprint className="h-4 w-4 text-muted-foreground" /> },
-    { label: "Type", value: <Badge variant={instance.type === 'server' ? 'default' : 'secondary'} className="capitalize">{instance.type}</Badge>, icon: instance.type === 'server' ? <Server className="h-4 w-4 text-muted-foreground" /> : <Smartphone className="h-4 w-4 text-muted-foreground" /> },
-    { label: "Status", value: <InstanceStatusBadge status={instance.status} />, icon: <Cable className="h-4 w-4 text-muted-foreground" /> },
+    { label: "类型", value: <Badge variant={instance.type === 'server' ? 'default' : 'secondary'} className="capitalize">{instance.type === 'server' ? '服务器' : '客户端'}</Badge>, icon: instance.type === 'server' ? <Server className="h-4 w-4 text-muted-foreground" /> : <Smartphone className="h-4 w-4 text-muted-foreground" /> },
+    { label: "状态", value: <InstanceStatusBadge status={instance.status} />, icon: <Cable className="h-4 w-4 text-muted-foreground" /> },
     { label: "URL", value: <span className="break-all text-sm">{instance.url}</span>, fullWidth: true },
-    { label: "TCP Received", value: formatBytes(instance.tcprx), icon: <ArrowDownCircle className="h-4 w-4 text-blue-500" /> },
-    { label: "TCP Sent", value: formatBytes(instance.tcptx), icon: <ArrowUpCircle className="h-4 w-4 text-green-500" /> },
-    { label: "UDP Received", value: formatBytes(instance.udprx), icon: <ArrowDownCircle className="h-4 w-4 text-blue-500" /> },
-    { label: "UDP Sent", value: formatBytes(instance.udptx), icon: <ArrowUpCircle className="h-4 w-4 text-green-500" /> },
+    { label: "TCP 接收", value: formatBytes(instance.tcprx), icon: <ArrowDownCircle className="h-4 w-4 text-blue-500" /> },
+    { label: "TCP 发送", value: formatBytes(instance.tcptx), icon: <ArrowUpCircle className="h-4 w-4 text-green-500" /> },
+    { label: "UDP 接收", value: formatBytes(instance.udprx), icon: <ArrowDownCircle className="h-4 w-4 text-blue-500" /> },
+    { label: "UDP 发送", value: formatBytes(instance.udptx), icon: <ArrowUpCircle className="h-4 w-4 text-green-500" /> },
   ];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-xl">Instance Details</DialogTitle>
+          <DialogTitle className="text-xl">实例详情</DialogTitle>
           <DialogDescription>
-            Detailed information for instance <span className="font-semibold">{instance.id}</span>.
+            实例 <span className="font-semibold">{instance.id}</span> 的详细信息。
           </DialogDescription>
         </DialogHeader>
         <div className="mt-4 space-y-4">

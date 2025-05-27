@@ -14,7 +14,6 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
@@ -62,13 +61,13 @@ export function OptimizeInstanceDialog({ instance, open, onOpenChange }: Optimiz
       const result = await suggestInstanceConfiguration(values as SuggestInstanceConfigurationInput);
       setSuggestedConfig(result.suggestedUrlConfiguration);
       toast({
-        title: 'Suggestion Ready',
-        description: 'AI has provided an optimized configuration.',
+        title: '建议已准备好',
+        description: 'AI 已提供优化配置。',
       });
     } catch (error: any) {
       toast({
-        title: 'Error Getting Suggestion',
-        description: error.message || 'An unknown error occurred.',
+        title: '获取建议出错',
+        description: error.message || '发生未知错误。',
         variant: 'destructive',
       });
     } finally {
@@ -79,7 +78,7 @@ export function OptimizeInstanceDialog({ instance, open, onOpenChange }: Optimiz
   const handleCopyToClipboard = () => {
     if (suggestedConfig) {
       navigator.clipboard.writeText(suggestedConfig);
-      toast({ title: "Copied to clipboard!" });
+      toast({ title: "已复制到剪贴板！" });
     }
   };
 
@@ -91,10 +90,10 @@ export function OptimizeInstanceDialog({ instance, open, onOpenChange }: Optimiz
         <DialogHeader>
           <DialogTitle className="flex items-center">
             <Wand2 className="mr-2 h-5 w-5 text-primary" />
-            AI-Powered Optimization
+            AI 驱动的优化
           </DialogTitle>
           <DialogDescription>
-            Get an AI-suggested optimized URL configuration for instance <span className="font-semibold">{instance.id}</span>.
+            获取针对实例 <span className="font-semibold">{instance.id}</span> 的 AI 建议优化 URL 配置。
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -104,16 +103,16 @@ export function OptimizeInstanceDialog({ instance, open, onOpenChange }: Optimiz
               name="instanceType"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Instance Type</FormLabel>
+                  <FormLabel>实例类型</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value} disabled>
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select instance type" />
+                        <SelectValue placeholder="选择实例类型" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="client">Client</SelectItem>
-                      <SelectItem value="server">Server</SelectItem>
+                      <SelectItem value="client">客户端</SelectItem>
+                      <SelectItem value="server">服务器</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -125,10 +124,10 @@ export function OptimizeInstanceDialog({ instance, open, onOpenChange }: Optimiz
               name="performanceCharacteristics"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Desired Performance Characteristics</FormLabel>
+                  <FormLabel>期望性能特征</FormLabel>
                   <FormControl>
                     <Textarea
-                      placeholder="e.g., low latency, high throughput, stable connection for gaming"
+                      placeholder="例如：低延迟、高吞吐量、游戏稳定连接"
                       {...field}
                     />
                   </FormControl>
@@ -137,7 +136,7 @@ export function OptimizeInstanceDialog({ instance, open, onOpenChange }: Optimiz
               )}
             />
             <Button type="submit" className="w-full" disabled={isLoadingSuggestion}>
-              {isLoadingSuggestion ? 'Getting Suggestion...' : 'Get Suggestion'}
+              {isLoadingSuggestion ? '获取建议中...' : '获取建议'}
             </Button>
           </form>
         </Form>
@@ -149,7 +148,7 @@ export function OptimizeInstanceDialog({ instance, open, onOpenChange }: Optimiz
         )}
         {suggestedConfig && !isLoadingSuggestion && (
           <div className="mt-6 pt-4 border-t">
-            <Label className="text-base font-semibold">Suggested Configuration:</Label>
+            <Label className="text-base font-semibold">建议配置：</Label>
             <div className="mt-2 p-3 bg-muted rounded-md text-sm relative">
               <pre className="whitespace-pre-wrap break-all font-mono">{suggestedConfig}</pre>
               <Button
@@ -157,13 +156,18 @@ export function OptimizeInstanceDialog({ instance, open, onOpenChange }: Optimiz
                 size="icon"
                 onClick={handleCopyToClipboard}
                 className="absolute top-2 right-2 h-7 w-7"
-                aria-label="Copy to clipboard"
+                aria-label="复制到剪贴板"
               >
                 <Copy className="h-4 w-4" />
               </Button>
             </div>
           </div>
         )}
+         <DialogFooter className="sm:justify-start mt-4">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              关闭
+            </Button>
+          </DialogFooter>
       </DialogContent>
     </Dialog>
   );
