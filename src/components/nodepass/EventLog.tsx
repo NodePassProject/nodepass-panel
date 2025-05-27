@@ -8,9 +8,6 @@ import { Badge } from '@/components/ui/badge';
 import { Rss } from 'lucide-react';
 import type { InstanceEvent } from '@/types/nodepass';
 import { useApiConfig } from '@/hooks/use-api-key';
-// getEventsUrl is no longer needed here directly for EventSource construction
-// import { getEventsUrl } from '@/lib/api';
-
 
 export function EventLog() {
   const [events, setEvents] = useState<InstanceEvent[]>([]);
@@ -30,26 +27,30 @@ export function EventLog() {
       return;
     }
     
+    // Clear previous events and show initializing message
     setEvents([{type: 'log', data: '正在通过代理初始化事件流...', timestamp: new Date().toISOString()}]);
     
     const actualNodePassEventsUrl = `${apiRoot}/events`;
+    // The proxy URL needs to correctly encode the target URL and token
     const proxyUrl = `/api/events-proxy?targetUrl=${encodeURIComponent(actualNodePassEventsUrl)}&token=${encodeURIComponent(currentToken)}`;
     // console.log(`Attempting to connect to EventSource via proxy: ${proxyUrl}`);
 
     if (eventSourceRef.current) {
+        // console.log('Closing existing EventSource connection.');
         eventSourceRef.current.close();
     }
 
-    // EventSource does not allow custom headers like X-API-Key.
-    // We are using a Next.js API route as a proxy to add the header.
-    const newEventSource = new EventSource(proxyUrl); // No withCredentials needed if proxy handles auth
+    const newEventSource = new EventSource(proxyUrl);
     eventSourceRef.current = newEventSource;
+    // console.log('New EventSource created, state:', newEventSource.readyState);
 
     newEventSource.onopen = () => {
+      // console.log('EventSource connection opened via proxy.');
       setEvents((prevEvents) => [{type: 'log', data: '事件流已通过代理连接。等待事件...', timestamp: new Date().toISOString()}, ...prevEvents.filter(e => !e.data.startsWith('正在通过代理初始化事件流...'))]);
     };
 
     newEventSource.onmessage = (event) => {
+      // console.log('EventSource message received via proxy:', event.data);
       try {
         const newEventData = JSON.parse(event.data);
         const newEvent: InstanceEvent = {
@@ -65,32 +66,46 @@ export function EventLog() {
       }
     };
 
-    newEventSource.onerror = (error) => {
-      console.error("EventSource 错误:", error);
+    newEventSource.onerror = (event: Event) => { // Renamed 'error' to 'event'
+      console.error(
+        `EventSource 错误 (客户端). ReadyState: ${newEventSource.readyState}. ` +
+        `客户端事件对象 (如下所示) 通常缺乏详细信息。` +
+        `请检查 Next.js 服务器日志 (代理问题) 和 NodePass API 服务器日志以了解根本原因。`,
+        event // Log the actual event object
+      );
       let errorMessage = 'EventSource 连接错误。';
       if (newEventSource.readyState === EventSource.CLOSED) {
         errorMessage = 'EventSource 连接已关闭。可能由于代理或服务器端问题。';
       } else if (newEventSource.readyState === EventSource.CONNECTING) {
-        errorMessage = 'EventSource 正在尝试重新连接...';
+        // This state might not be hit often if errors are fatal before connecting
+        errorMessage = 'EventSource 正在尝试连接/重新连接...';
       }
       
-      const errorEvent: InstanceEvent = { type: 'log', data: errorMessage, timestamp: new Date().toISOString() };
-      setEvents((prevEvents) => [errorEvent, ...prevEvents.slice(0,99)]);
-      // Optionally, close and nullify if it's a persistent error and not just a reconnect attempt.
+      const errorEventLog: InstanceEvent = { type: 'log', data: errorMessage, timestamp: new Date().toISOString() };
+      setEvents((prevEvents) => {
+        // Avoid duplicate error messages if they are the same and last one
+        if (prevEvents.length > 0 && prevEvents[0].data === errorMessage) {
+          return prevEvents;
+        }
+        return [errorEventLog, ...prevEvents.slice(0,99)];
+      });
+      // Consider closing if it's persistently closed and not just a network hiccup
       // if (newEventSource.readyState === EventSource.CLOSED) {
+      //    console.log('EventSource is closed, cleaning up ref.');
       //    newEventSource.close();
       //    eventSourceRef.current = null;
       // }
     };
 
     return () => {
+      // console.log('Cleaning up EventSource connection.');
       if (newEventSource) {
         newEventSource.close();
       }
       eventSourceRef.current = null;
     };
 
-  }, [apiConfig, getApiRootUrl, getToken]);
+  }, [apiConfig, getApiRootUrl, getToken]); // Rerun effect if API config changes
 
   const getBadgeText = (type: InstanceEvent['type']): string => {
     if (type.includes('created')) return '已创建';
@@ -133,3 +148,4 @@ export function EventLog() {
     </Card>
   );
 }
+
