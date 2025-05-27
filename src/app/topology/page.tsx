@@ -5,33 +5,33 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useApiConfig, type NamedApiConfig } from '@/hooks/use-api-key';
 import { nodePassApi } from '@/lib/api';
 import type { Instance } from '@/types/nodepass';
-import { AlertTriangle, Loader2, Server, Smartphone, RefreshCw, Info } from 'lucide-react';
-import { InstanceStatusBadge } from '@/components/nodepass/InstanceStatusBadge';
+import { AlertTriangle, Loader2, RefreshCw, Info, Network, ServerIcon, SmartphoneIcon } from 'lucide-react'; // Added Network, ServerIcon, SmartphoneIcon
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
-interface InstanceWithApiName extends Instance {
-  apiName: string;
+interface InstanceWithApiDetails extends Instance {
   apiId: string;
+  apiName: string;
 }
 
-interface NodePosition {
-  id: string;
+interface ApiNode {
+  id: string; // API Config ID
+  name: string;
   x: number;
   y: number;
   width: number;
   height: number;
-  type: 'server' | 'client';
-  apiName: string;
 }
 
-interface Connection {
-  from: string; // client instance id
-  to: string;   // server instance id
-  fromPos: { x: number; y: number };
-  toPos: { x: number; y: number };
-  type: 'intra-api' | 'inter-api'; // Type of connection
+interface InterApiLink {
+  sourceApiId: string;
+  targetApiId: string;
+  connections: { clientInstanceId: string; serverInstanceId: string; clientApiName: string; serverApiName: string }[];
+  id: string; // Unique ID for the link, e.g., sourceApiId-targetApiId
+  sourcePos?: { x: number; y: number };
+  targetPos?: { x: number; y: number };
 }
 
 // scheme://<tunnel_addr>/<target_addr>?...
@@ -60,10 +60,9 @@ function parseTunnelAddr(urlString: string): string | null {
   if (endOfTunnelAddr !== -1) {
     return restOfString.substring(0, endOfTunnelAddr);
   }
-  return restOfString; // Should not happen if logic is correct
+  return restOfString;
 }
 
-// scheme://<tunnel_addr>/<target_addr>?...
 function parseTargetAddr(urlString: string): string | null {
   const schemeSeparator = "://";
   const schemeIndex = urlString.indexOf(schemeSeparator);
@@ -79,95 +78,141 @@ function parseTargetAddr(urlString: string): string | null {
   if (querySeparatorIndex !== -1) {
     return targetAndQuery.substring(0, querySeparatorIndex);
   }
-  return targetAndQuery; // No query parameters after target_addr
+  return targetAndQuery;
 }
 
 
 export default function TopologyPage() {
   const router = useRouter();
   const { apiConfigsList, isLoading: isLoadingApiConfig, getApiRootUrl, getToken } = useApiConfig();
-  const [allInstances, setAllInstances] = useState<InstanceWithApiName[]>([]);
-  const [isLoadingInstances, setIsLoadingInstances] = useState(true);
+  
+  const [allInstances, setAllInstances] = useState<InstanceWithApiDetails[]>([]);
+  const [apiNodes, setApiNodes] = useState<ApiNode[]>([]);
+  const [interApiLinks, setInterApiLinks] = useState<InterApiLink[]>([]);
+  
+  const [isLoadingData, setIsLoadingData] = useState(true);
   const [fetchErrors, setFetchErrors] = useState<Map<string, string>>(new Map());
-
-  const [nodePositions, setNodePositions] = useState<Map<string, NodePosition>>(new Map());
-  const [connections, setConnections] = useState<Connection[]>([]);
 
   const nodeRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const svgContainerRef = useRef<HTMLDivElement | null>(null);
 
   const calculateLayout = useCallback(() => {
-    if (allInstances.length === 0 || !svgContainerRef.current) return;
+    if (apiConfigsList.length === 0 || !svgContainerRef.current) return;
 
-    const newPositions = new Map<string, NodePosition>();
+    const newApiNodes: ApiNode[] = [];
     const svgRect = svgContainerRef.current.getBoundingClientRect();
+    const nodeWidth = 220; // Approximate width of an API node card
+    const nodeHeight = 100; // Approximate height
+    const padding = 50;
+    const nodesPerRow = Math.max(1, Math.floor((svgRect.width - padding) / (nodeWidth + padding)));
 
-    allInstances.forEach(inst => {
-      const el = nodeRefs.current.get(inst.id);
+
+    apiConfigsList.forEach((apiConfig, index) => {
+      const el = nodeRefs.current.get(apiConfig.id);
       if (el) {
-        newPositions.set(inst.id, {
-          id: inst.id,
-          type: inst.type,
-          x: (el.offsetLeft + el.offsetWidth / 2) - svgContainerRef.current!.scrollLeft,
-          y: (el.offsetTop + el.offsetHeight / 2) - svgContainerRef.current!.scrollTop,
+         newApiNodes.push({
+          id: apiConfig.id,
+          name: apiConfig.name,
+          x: el.offsetLeft + el.offsetWidth / 2 - svgContainerRef.current!.scrollLeft,
+          y: el.offsetTop + el.offsetHeight / 2 - svgContainerRef.current!.scrollTop,
           width: el.offsetWidth,
           height: el.offsetHeight,
-          apiName: inst.apiName,
+        });
+      } else {
+        // Fallback positioning if element not yet rendered (might happen on initial fast load)
+        // This simple grid might not be ideal but prevents errors.
+        const col = index % nodesPerRow;
+        const row = Math.floor(index / nodesPerRow);
+        newApiNodes.push({
+            id: apiConfig.id,
+            name: apiConfig.name,
+            x: col * (nodeWidth + padding) + padding + nodeWidth / 2,
+            y: row * (nodeHeight + padding) + padding + nodeHeight / 2,
+            width: nodeWidth,
+            height: nodeHeight,
         });
       }
     });
-    setNodePositions(newPositions);
+    setApiNodes(newApiNodes);
 
-    const newConnections: Connection[] = [];
+
+    // Identify inter-API instance connections
     const clientInstances = allInstances.filter(inst => inst.type === 'client');
     const serverInstances = allInstances.filter(inst => inst.type === 'server');
+    const linksMap = new Map<string, InterApiLink>();
 
     clientInstances.forEach(client => {
-      const clientTunnelAddr = parseTunnelAddr(client.url); // Client's <tunnel_addr>
-      const clientPos = newPositions.get(client.id);
-      const clientApiId = client.apiId;
+      const clientTunnelAddr = parseTunnelAddr(client.url);
+      if (!clientTunnelAddr) return;
 
-      if (clientTunnelAddr && clientPos) {
-        serverInstances.forEach(server => {
-          const serverTargetAddr = parseTargetAddr(server.url); // Server's <target_addr>
-          const serverPos = newPositions.get(server.id);
-          const serverApiId = server.apiId;
-          
-          // Corrected logic: Client's <tunnel_addr> connects to Server's <target_addr>
-          if (serverTargetAddr && clientTunnelAddr === serverTargetAddr && serverPos) {
-            newConnections.push({ 
-              from: client.id, 
-              to: server.id,
-              fromPos: { x: clientPos.x, y: clientPos.y },
-              toPos: { x: serverPos.x, y: serverPos.y },
-              type: clientApiId === serverApiId ? 'intra-api' : 'inter-api',
-            });
+      serverInstances.forEach(server => {
+        if (client.apiId === server.apiId) return; // Skip intra-API connections for this visualization
+
+        const serverTargetAddr = parseTargetAddr(server.url);
+        if (!serverTargetAddr) return;
+
+        if (clientTunnelAddr === serverTargetAddr) {
+          const linkId = [client.apiId, server.apiId].sort().join('-');
+          let link = linksMap.get(linkId);
+          if (!link) {
+            link = {
+              id: linkId,
+              sourceApiId: client.apiId, // Or server.apiId, depends on how you want to draw
+              targetApiId: server.apiId,
+              connections: [],
+            };
           }
-        });
-      }
+          link.connections.push({ 
+            clientInstanceId: client.id, 
+            serverInstanceId: server.id,
+            clientApiName: client.apiName,
+            serverApiName: server.apiName,
+          });
+          linksMap.set(linkId, link);
+        }
+      });
     });
-    setConnections(newConnections);
-  }, [allInstances]);
+
+    const finalLinks = Array.from(linksMap.values()).map(link => {
+      const sourceNode = newApiNodes.find(n => n.id === link.sourceApiId);
+      const targetNode = newApiNodes.find(n => n.id === link.targetApiId);
+      if (sourceNode && targetNode) {
+        return {
+          ...link,
+          sourcePos: { x: sourceNode.x, y: sourceNode.y },
+          targetPos: { x: targetNode.x, y: targetNode.y },
+        };
+      }
+      return null;
+    }).filter(Boolean) as InterApiLink[];
+    
+    setInterApiLinks(finalLinks);
+
+  }, [apiConfigsList, allInstances]);
 
 
   useEffect(() => {
-    const fetchAllInstances = async () => {
-      if (isLoadingApiConfig || apiConfigsList.length === 0) {
-        setIsLoadingInstances(false);
-        if (!isLoadingApiConfig && apiConfigsList.length === 0) {
-            setFetchErrors(prev => new Map(prev).set("global", "没有配置任何 API 连接。"));
-        }
+    const fetchAllData = async () => {
+      if (isLoadingApiConfig) return;
+      
+      setIsLoadingData(true);
+      setFetchErrors(new Map());
+      
+      if (apiConfigsList.length === 0) {
+        setFetchErrors(prev => new Map(prev).set("global", "没有配置任何 API 连接。"));
+        setAllInstances([]);
+        setApiNodes([]);
+        setInterApiLinks([]);
+        setIsLoadingData(false);
         return;
       }
 
-      setIsLoadingInstances(true);
-      setFetchErrors(new Map());
-      let combinedInstances: InstanceWithApiName[] = [];
+      let combinedInstances: InstanceWithApiDetails[] = [];
       let currentErrors = new Map<string, string>();
 
       for (const config of apiConfigsList) {
-        const apiRoot = getApiRootUrl(config.id); // Pass config.id
-        const token = getToken(config.id);       // Pass config.id
+        const apiRoot = getApiRootUrl(config.id);
+        const token = getToken(config.id);
 
         if (!apiRoot || !token) {
           currentErrors.set(config.id, `API 配置 "${config.name}" 不完整或无效。`);
@@ -176,7 +221,7 @@ export default function TopologyPage() {
 
         try {
           const data = await nodePassApi.getInstances(apiRoot, token);
-          combinedInstances.push(...data.map(inst => ({ ...inst, apiName: config.name, apiId: config.id })));
+          combinedInstances.push(...data.map(inst => ({ ...inst, apiId: config.id, apiName: config.name })));
         } catch (err: any) {
           console.error(`加载实例失败，来自 API "${config.name}":`, err);
           currentErrors.set(config.id, `从 "${config.name}" 加载实例失败: ${err.message || '未知错误'}`);
@@ -185,32 +230,44 @@ export default function TopologyPage() {
       
       setAllInstances(combinedInstances);
       setFetchErrors(currentErrors);
-      setIsLoadingInstances(false);
+      
+      // Initial API nodes setup based on configs (positions will be refined by calculateLayout)
+      const initialApiNodes = apiConfigsList.map(config => ({
+        id: config.id,
+        name: config.name,
+        x: 0, y: 0, width: 200, height: 80 // Placeholder dimensions
+      }));
+      setApiNodes(initialApiNodes);
+
+      setIsLoadingData(false);
     };
-    fetchAllInstances();
+
+    fetchAllData();
   }, [apiConfigsList, isLoadingApiConfig, getApiRootUrl, getToken]);
 
   useEffect(() => {
-    if (allInstances.length > 0) {
-      const handleResize = () => {
-        setTimeout(calculateLayout, 150); // Debounce or adjust timing
-      };
-      const timer = setTimeout(calculateLayout, 150); // Initial calculation
-
-      window.addEventListener('resize', handleResize);
-      return () => {
-        window.removeEventListener('resize', handleResize);
-        clearTimeout(timer);
-      };
+     // Calculate layout once data is loaded and elements are potentially in DOM
+    if (!isLoadingData && apiConfigsList.length > 0 && allInstances.length >= 0) {
+        const timer = setTimeout(calculateLayout, 150); // Ensure DOM elements are available
+        
+        const handleResize = () => {
+            setTimeout(calculateLayout, 150); 
+        };
+        window.addEventListener('resize', handleResize);
+        
+        return () => {
+            clearTimeout(timer);
+            window.removeEventListener('resize', handleResize);
+        };
     }
-  }, [allInstances, calculateLayout]);
+  }, [isLoadingData, apiConfigsList, allInstances, calculateLayout]);
 
 
-  if (isLoadingApiConfig || isLoadingInstances) {
+  if (isLoadingApiConfig || isLoadingData) {
     return (
       <div className="container mx-auto px-4 py-8 flex justify-center items-center h-[calc(100vh-10rem)]">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-4 text-lg">加载拓扑信息中...</p>
+        <p className="ml-4 text-lg">加载 API 配置和实例拓扑信息中...</p>
       </div>
     );
   }
@@ -228,10 +285,14 @@ export default function TopologyPage() {
     );
   }
   
-  if (allInstances.length === 0 && !isLoadingInstances && fetchErrors.size === 0 && apiConfigsList.length > 0) {
-    return (
+  if (apiConfigsList.length === 0 && !isLoadingData) {
+     return (
       <div className="container mx-auto px-4 py-8 text-center">
-        <p className="text-muted-foreground">所有已配置的 API 连接下均无实例可供显示拓扑。</p>
+         <div className="text-muted-foreground bg-muted p-4 rounded-md inline-flex items-center">
+          <Info className="h-6 w-6 mr-2" />
+          请先添加 API 连接才能查看拓扑图。
+        </div>
+        <Button onClick={() => router.push('/connections')} className="mt-4">前往连接管理</Button>
       </div>
     );
   }
@@ -239,22 +300,13 @@ export default function TopologyPage() {
   return (
     <div className="container mx-auto px-4 py-8 flex flex-col h-[calc(100vh-6rem)]">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">实例连接拓扑图</h1>
-         <Button variant="outline" onClick={calculateLayout} disabled={isLoadingInstances}>
-          <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingInstances ? 'animate-spin' : ''}`} />
+        <h1 className="text-3xl font-bold">API 配置连接拓扑图</h1>
+         <Button variant="outline" onClick={calculateLayout} disabled={isLoadingData}>
+          <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingData ? 'animate-spin' : ''}`} />
           刷新布局
         </Button>
       </div>
-      <div className="flex items-center space-x-4 mb-4 text-sm">
-          <div className="flex items-center">
-            <div className="w-4 h-0.5 bg-primary mr-2"></div>
-            <span>同一 API 内连接</span>
-          </div>
-          <div className="flex items-center">
-            <div className="w-4 h-0.5 bg-accent mr-2"></div>
-            <span>跨 API 连接</span>
-          </div>
-      </div>
+      
       {fetchErrors.size > 0 && !globalError && (
         <div className="mb-4 space-y-2">
           {Array.from(fetchErrors.entries()).map(([apiId, errorMsg]) => (
@@ -267,72 +319,86 @@ export default function TopologyPage() {
           ))}
         </div>
       )}
+
       <div 
         ref={svgContainerRef}
         className="relative border p-4 rounded-lg shadow-lg flex-grow bg-muted/20 overflow-auto"
+        style={{ minHeight: '500px' }}
       >
         <svg width="100%" height="100%" className="absolute top-0 left-0 pointer-events-none z-0" style={{minWidth: '800px', minHeight: '600px'}}>
           <defs>
-            <marker id="arrowhead-primary" markerWidth="10" markerHeight="7" 
-                  refX="9" refY="3.5" orient="auto-start-reverse" markerUnits="strokeWidth"> 
-              <polygon points="0 0, 10 3.5, 0 7" fill="hsl(var(--primary))" />
-            </marker>
-            <marker id="arrowhead-accent" markerWidth="10" markerHeight="7" 
+            <marker id="arrowhead-inter-api" markerWidth="10" markerHeight="7" 
                   refX="9" refY="3.5" orient="auto-start-reverse" markerUnits="strokeWidth"> 
               <polygon points="0 0, 10 3.5, 0 7" fill="hsl(var(--accent))" />
             </marker>
           </defs>
-          {connections.map((conn, index) => (
-            <line
-              key={`conn-${index}-${conn.from}-${conn.to}`}
-              x1={conn.fromPos.x}
-              y1={conn.fromPos.y}
-              x2={conn.toPos.x}
-              y2={conn.toPos.y}
-              stroke={conn.type === 'intra-api' ? "hsl(var(--primary))" : "hsl(var(--accent))"}
-              strokeWidth="1.5"
-              markerEnd={conn.type === 'intra-api' ? "url(#arrowhead-primary)" : "url(#arrowhead-accent)"}
-            />
-          ))}
+          {interApiLinks.map((link) => {
+            if (!link.sourcePos || !link.targetPos) return null;
+            const dx = link.targetPos.x - link.sourcePos.x;
+            const dy = link.targetPos.y - link.sourcePos.y;
+            const angle = Math.atan2(dy, dx);
+            const textX = link.sourcePos.x + dx / 2;
+            const textY = link.sourcePos.y + dy / 2;
+
+            return (
+              <g key={link.id}>
+                <line
+                  x1={link.sourcePos.x}
+                  y1={link.sourcePos.y}
+                  x2={link.targetPos.x}
+                  y2={link.targetPos.y}
+                  stroke="hsl(var(--accent))"
+                  strokeWidth="2"
+                  markerEnd="url(#arrowhead-inter-api)"
+                />
+                {/* Basic text label for connection */}
+                <text
+                  x={textX}
+                  y={textY - 5} // Offset text above the line
+                  fill="hsl(var(--foreground))"
+                  fontSize="10"
+                  textAnchor="middle"
+                  className="pointer-events-auto" // Allow text to be interactive if needed later
+                  transform={`rotate(${angle * 180 / Math.PI}, ${textX}, ${textY})`}
+                >
+                  {link.connections.map(c => `${c.clientInstanceId.substring(0,4)}..->${c.serverInstanceId.substring(0,4)}..`).join(', ')}
+                  <title>{link.connections.map(c => `Client: ${c.clientInstanceId} (${c.clientApiName}) connects to Server: ${c.serverInstanceId} (${c.serverApiName})`).join('\n')}</title>
+                </text>
+              </g>
+            );
+          })}
         </svg>
 
-        <div className="relative z-10 flex flex-wrap gap-6 p-4 items-start">
-          {allInstances.map(instance => (
+        <div className="relative z-10 flex flex-wrap gap-6 p-4 items-start justify-around">
+          {apiConfigsList.map((apiConfig, index) => (
             <div
-              key={instance.id}
-              id={`node-${instance.id}`}
-              ref={el => { if(el) nodeRefs.current.set(instance.id, el); else nodeRefs.current.delete(instance.id); }}
-              className="p-3 border rounded-md shadow-sm bg-card hover:shadow-md transition-shadow cursor-default break-words w-56 flex flex-col space-y-1"
-              title={`ID: ${instance.id}\nURL: ${instance.url}\n来源 API: ${instance.apiName} (ID: ${instance.apiId})\n类型: ${instance.type}`}
+              key={apiConfig.id}
+              id={`api-node-${apiConfig.id}`}
+              ref={el => { if(el) nodeRefs.current.set(apiConfig.id, el); else nodeRefs.current.delete(apiConfig.id); }}
+              className="p-4 border rounded-lg shadow-md bg-card hover:shadow-lg transition-shadow cursor-default w-56"
+              title={`API Name: ${apiConfig.name}\nAPI URL: ${apiConfig.apiUrl}${apiConfig.prefixPath ? '/' + apiConfig.prefixPath : ''}\nID: ${apiConfig.id}`}
             >
-              <div className="flex items-center justify-between">
-                <p className="font-semibold text-sm truncate">
-                  {instance.type === 'server' ? 
-                    <Server className="inline h-4 w-4 mr-1 text-blue-500"/> : 
-                    <Smartphone className="inline h-4 w-4 mr-1 text-green-500"/>}
-                  {instance.id.substring(0,8)}...
-                </p>
-                <InstanceStatusBadge status={instance.status} />
+              <div className="flex items-center text-primary mb-2">
+                <Network className="h-5 w-5 mr-2" />
+                <h3 className="font-semibold text-lg truncate">{apiConfig.name}</h3>
               </div>
-              <Badge variant="secondary" className="text-xs self-start px-1.5 py-0.5">{instance.apiName}</Badge>
-              <p className="text-xs text-muted-foreground truncate" title={instance.url}>
-                {instance.type === 'client' ? 
-                  `客户端连接到: ${parseTunnelAddr(instance.url) || 'N/A'}` : 
-                  `服务器目标: ${parseTargetAddr(instance.url) || 'N/A'}`
-                }
+              <p className="text-xs text-muted-foreground break-all">
+                URL: {apiConfig.apiUrl}
+              </p>
+              <p className="text-xs text-muted-foreground break-all">
+                Prefix: {apiConfig.prefixPath || "/ (none)"}
               </p>
             </div>
           ))}
-          {allInstances.length === 0 && fetchErrors.size === 0 && !isLoadingInstances && apiConfigsList.length > 0 && (
-             <p className="text-muted-foreground w-full text-center py-10">在所有配置的API中均未找到实例。</p>
-          )}
         </div>
       </div>
        <div className="mt-4 p-3 bg-muted/50 rounded-md text-xs text-muted-foreground flex items-center">
         <Info className="h-4 w-4 mr-2 shrink-0 text-primary" />
-        拓扑连接是基于客户端 URL 中的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> 部分与服务器 URL 中的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;target_addr&gt;</code> 部分匹配来推断的。
+        此拓扑图显示不同 API 配置之间的连接。连接基于客户端实例的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> 与另一 API 配置中服务器实例的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;target_addr&gt;</code> 匹配来推断。
       </div>
     </div>
   );
 }
+    
+
     
