@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
@@ -14,50 +14,75 @@ import { getEventsUrl } from '@/lib/api';
 export function EventLog() {
   const [events, setEvents] = useState<InstanceEvent[]>([]);
   const { getApiRootUrl, getToken } = useApiConfig();
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
     const apiRootUrl = getApiRootUrl();
-    const token = getToken(); // Token might be needed for query param auth
+    const token = getToken();
 
     if (!apiRootUrl || !token) {
       setEvents([{type: 'log', data: 'API 配置未设置。事件流已禁用。', timestamp: new Date().toISOString()}]);
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
       return;
     }
     
-    setEvents([{type: 'log', data: '事件流已初始化。等待事件...', timestamp: new Date().toISOString()}]);
+    setEvents([{type: 'log', data: '正在初始化事件流...', timestamp: new Date().toISOString()}]);
     
-    const sseUrl = getEventsUrl(apiRootUrl, token); // Pass token if SSE auth uses query params
+    const sseUrl = getEventsUrl(apiRootUrl, token);
     // console.log(`Attempting to connect to EventSource: ${sseUrl}`);
 
-    // Standard EventSource cannot send custom headers. Authentication for SSE needs to be handled
-    // by other means, e.g. cookies (if same-origin) or token in query parameter (if server supports it).
-    // The current placeholder reflects this limitation.
-    // const eventSource = new EventSource(sseUrl);
-    // eventSource.onmessage = (event) => {
-    //   try {
-    //     const newEventData = JSON.parse(event.data);
-    //     // Ensure the parsed data conforms to InstanceEvent structure, especially timestamp
-    //     const newEvent: InstanceEvent = {
-    //         type: newEventData.type || 'log',
-    //         data: newEventData.data || newEventData,
-    //         timestamp: newEventData.timestamp || new Date().toISOString()
-    //     };
-    //     setEvents((prevEvents) => [newEvent, ...prevEvents.slice(0, 99)]); // Keep last 100 events
-    //   } catch (error) {
-    //     console.error("无法解析事件数据:", error);
-    //     const errorEvent: InstanceEvent = { type: 'log', data: `解析事件错误: ${event.data}`, timestamp: new Date().toISOString() };
-    //     setEvents((prevEvents) => [errorEvent, ...prevEvents.slice(0,99)]);
-    //   }
-    // };
-    // eventSource.onerror = (error) => {
-    //   console.error("EventSource 错误:", error);
-    //   const errorEvent: InstanceEvent = { type: 'log', data: 'EventSource 连接错误。', timestamp: new Date().toISOString() };
-    //   setEvents((prevEvents) => [errorEvent, ...prevEvents.slice(0,99)]);
-    //   // eventSource.close(); // Or implement retry logic
-    // };
-    // return () => {
-    //   eventSource.close();
-    // };
+    // Close existing connection if any
+    if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+    }
+
+    const newEventSource = new EventSource(sseUrl);
+    eventSourceRef.current = newEventSource;
+
+    newEventSource.onopen = () => {
+      setEvents((prevEvents) => [{type: 'log', data: '事件流已连接。等待事件...', timestamp: new Date().toISOString()}, ...prevEvents.filter(e => e.data !== '正在初始化事件流...')]);
+    };
+
+    newEventSource.onmessage = (event) => {
+      try {
+        const newEventData = JSON.parse(event.data);
+        const newEvent: InstanceEvent = {
+            type: newEventData.type || 'log',
+            data: newEventData.data || newEventData, // Handle cases where data might be the root object
+            timestamp: newEventData.timestamp || new Date().toISOString()
+        };
+        setEvents((prevEvents) => [newEvent, ...prevEvents.slice(0, 99)]); // Keep last 100 events
+      } catch (error) {
+        console.error("无法解析事件数据:", error, "原始数据:", event.data);
+        const errorEvent: InstanceEvent = { type: 'log', data: `解析事件错误: ${event.data}`, timestamp: new Date().toISOString() };
+        setEvents((prevEvents) => [errorEvent, ...prevEvents.slice(0,99)]);
+      }
+    };
+
+    newEventSource.onerror = (error) => {
+      console.error("EventSource 错误:", error);
+      let errorMessage = 'EventSource 连接错误。';
+      if (newEventSource.readyState === EventSource.CLOSED) {
+        errorMessage = 'EventSource 连接已关闭。可能由于认证失败或服务器问题。';
+      } else if (newEventSource.readyState === EventSource.CONNECTING) {
+        errorMessage = 'EventSource 正在尝试重新连接...';
+      }
+      
+      const errorEvent: InstanceEvent = { type: 'log', data: errorMessage, timestamp: new Date().toISOString() };
+      setEvents((prevEvents) => [errorEvent, ...prevEvents.slice(0,99)]);
+      // Don't close here if it's CONNECTING, EventSource handles retries
+      // newEventSource.close(); // Or implement custom retry logic
+    };
+
+    return () => {
+      if (newEventSource) {
+        newEventSource.close();
+      }
+      eventSourceRef.current = null;
+    };
 
   }, [getApiRootUrl, getToken]);
 
@@ -76,7 +101,7 @@ export function EventLog() {
           实时事件日志
         </CardTitle>
         <CardDescription>
-          来自 NodePass 实例的实时更新。(注意: 实际的 SSE 连接可能受到 API 认证方法的限制)。
+          来自 NodePass 实例的实时更新。
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -94,7 +119,7 @@ export function EventLog() {
                 </Badge>
                 <span className="text-muted-foreground">{new Date(event.timestamp).toLocaleTimeString('zh-CN')}</span>
               </div>
-              <p className="mt-1 font-mono break-all">{typeof event.data === 'object' ? JSON.stringify(event.data) : event.data}</p>
+              <p className="mt-1 font-mono break-all">{typeof event.data === 'object' ? JSON.stringify(event.data) : String(event.data)}</p>
             </div>
           ))}
         </ScrollArea>

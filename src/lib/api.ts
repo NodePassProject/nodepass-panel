@@ -56,9 +56,11 @@ export const nodePassApi = {
 
 // For EventSource, authentication needs careful handling.
 // Standard EventSource cannot send custom headers like X-API-Key.
-// If the server supports token via query parameter (e.g., /events?token=YOUR_TOKEN), that could be a workaround.
+// This function now appends the token as a query parameter if available.
 export const getEventsUrl = (apiRootUrl: string, token?: string | null): string => {
-  // If server supports token in query for SSE:
-  // return token ? `${apiRootUrl}/events?token=${token}` : `${apiRootUrl}/events`;
-  return `${apiRootUrl}/events`; // Current implementation assumes no query token auth for SSE
+  const baseUrl = `${apiRootUrl}/events`;
+  if (token) {
+    return `${baseUrl}?token=${encodeURIComponent(token)}`;
+  }
+  return baseUrl;
 };
