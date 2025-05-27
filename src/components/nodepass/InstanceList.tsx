@@ -25,6 +25,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { nodePassApi, getEventsUrl } from '@/lib/api';
 import { useApiConfig } from '@/hooks/use-api-key';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge'; // Added import for Badge
 
 function formatBytes(bytes: number) {
   if (bytes === 0) return '0 B';
