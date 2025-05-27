@@ -11,31 +11,40 @@ export async function GET(request: NextRequest) {
     return new Response('Missing targetUrl query parameter', { status: 400 });
   }
   if (!token) {
-    return new Response('Missing token query parameter', { status: 400 });
+    // Allow connections without a token for flexibility, but log it.
+    // The target server will ultimately decide if this is permissible.
+    console.warn('Proxy: API token is missing in the request to the proxy. Proceeding without X-API-Key.');
   }
 
   try {
+    // Log the attempt, masking the token for security if it exists
+    console.log(`Proxy: Attempting to connect to target event stream. URL: ${targetUrl}, Token: ${token ? 'Present (masked)' : 'Not Present'}`);
+
+    const headers: HeadersInit = {
+      'Accept': 'text/event-stream',
+      'Connection': 'keep-alive', // Explicitly set keep-alive
+    };
+    if (token) {
+      headers['X-API-Key'] = token;
+    }
+
     const response = await fetch(targetUrl, {
-      headers: {
-        'X-API-Key': token,
-        'Accept': 'text/event-stream',
-      },
-      // Important: AbortSignal can be used to propagate client disconnects
-      // signal: request.signal, // This might require more advanced handling for streaming
+      method: 'GET', // Explicitly GET, though it's default for fetch
+      headers: headers,
+      // signal: request.signal, // Consider if client disconnect propagation is needed and how to handle it robustly
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`Error from target event stream: ${response.status} ${errorText}`);
+      console.error(`Proxy: Error from target event stream. Status: ${response.status}, URL: ${targetUrl}, Body: ${errorText}`);
       return new Response(errorText || `Error fetching event stream: ${response.status}`, { status: response.status });
     }
 
-    // Ensure the response body is a ReadableStream
     if (!response.body) {
+      console.error(`Proxy: ReadableStream not available from target. URL: ${targetUrl}`);
       return new Response('ReadableStream not available from target', { status: 500 });
     }
     
-    // Create a new ReadableStream to pipe the data through
     const readableStream = new ReadableStream({
       async start(controller) {
         const reader = response.body!.getReader();
@@ -44,16 +53,16 @@ export async function GET(request: NextRequest) {
         function push() {
           reader.read().then(({ done, value }) => {
             if (done) {
-              console.log('Proxy: Target stream closed');
+              console.log('Proxy: Target stream closed. URL:', targetUrl);
               controller.close();
               return;
             }
             const chunk = decoder.decode(value, { stream: true });
-            // console.log('Proxy: received chunk from target:', chunk);
+            // console.log('Proxy: received chunk from target:', chunk); // Potentially very verbose
             controller.enqueue(new TextEncoder().encode(chunk));
             push();
           }).catch(error => {
-            console.error('Proxy: Error reading from target stream:', error);
+            console.error('Proxy: Error reading from target stream. URL:', targetUrl, 'Error:', error);
             controller.error(error);
           });
         }
@@ -70,7 +79,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Error in event proxy:', error);
-    return new Response('Error in event proxy.', { status: 500 });
+    console.error('Proxy: Unexpected error in event proxy. URL:', targetUrl, 'Error:', error);
+    return new Response(`Error in event proxy: ${error instanceof Error ? error.message : 'Unknown error'}`, { status: 500 });
   }
 }
