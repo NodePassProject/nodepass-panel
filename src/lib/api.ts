@@ -1,5 +1,5 @@
 
-import type { Instance, CreateInstanceRequest, UpdateInstanceRequest } from '@/types/nodepass';
+import type { Instance, CreateInstanceRequest, UpdateInstanceRequest, ModifyInstanceConfigRequest } from '@/types/nodepass';
 
 async function request<T>(
   fullRequestUrl: string,
@@ -49,15 +49,18 @@ export const nodePassApi = {
   
   updateInstance: (id: string, data: UpdateInstanceRequest, apiRootUrl: string, token: string) =>
     request<Instance>(`${apiRootUrl}/v1/instances/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, token),
+
+  modifyInstanceConfig: (id: string, data: ModifyInstanceConfigRequest, apiRootUrl: string, token: string) =>
+    request<Instance>(`${apiRootUrl}/v1/instances/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, token),
   
   deleteInstance: (id: string, apiRootUrl: string, token: string) =>
     request<void>(`${apiRootUrl}/v1/instances/${id}`, { method: 'DELETE' }, token),
 };
 
 // This function provides the URL for the event stream.
-// It's up to the consumer (e.g., EventSource) to handle connection and authentication.
-// Standard EventSource cannot send custom headers like X-API-Key.
+// Standard EventSource cannot send custom headers like X-API-Key if connecting directly.
 export const getEventsUrl = (apiRootUrl: string): string => {
   if (!apiRootUrl) throw new Error("apiRootUrl is required to get events URL");
-  return `${apiRootUrl}/v1/events`; // Includes /v1 for the events endpoint
+  // Ensure v1 is part of the path for the events endpoint, consistent with other API calls
+  return `${apiRootUrl}/v1/events`; 
 };

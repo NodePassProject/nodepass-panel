@@ -13,19 +13,20 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertTriangle, Eye, Trash2, Wand2, ArrowDown, ArrowUp, Server, Smartphone, Search } from 'lucide-react';
-import type { Instance, UpdateInstanceRequest } from '@/types/nodepass';
+import { AlertTriangle, Eye, Trash2, Wand2, ArrowDown, ArrowUp, Server, Smartphone, Search, Pencil } from 'lucide-react'; // Added Pencil
+import type { Instance, UpdateInstanceRequest, ModifyInstanceConfigRequest } from '@/types/nodepass'; // Added ModifyInstanceConfigRequest
 import { InstanceStatusBadge } from './InstanceStatusBadge';
 import { InstanceControls } from './InstanceControls';
 import { DeleteInstanceDialog } from './DeleteInstanceDialog';
 import { InstanceDetailsModal } from './InstanceDetailsModal';
 import { OptimizeInstanceDialog } from './OptimizeInstanceDialog';
+import { ModifyInstanceDialog } from './ModifyInstanceDialog'; // Added ModifyInstanceDialog
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { nodePassApi, getEventsUrl } from '@/lib/api';
 import { useApiConfig } from '@/hooks/use-api-key';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge'; // Added import for Badge
+import { Badge } from '@/components/ui/badge';
 
 function formatBytes(bytes: number) {
   if (bytes === 0) return '0 B';
@@ -44,6 +45,7 @@ export function InstanceList() {
   const [selectedInstanceForDetails, setSelectedInstanceForDetails] = useState<Instance | null>(null);
   const [selectedInstanceForDelete, setSelectedInstanceForDelete] = useState<Instance | null>(null);
   const [selectedInstanceForOptimize, setSelectedInstanceForOptimize] = useState<Instance | null>(null);
+  const [selectedInstanceForModify, setSelectedInstanceForModify] = useState<Instance | null>(null); // State for modify dialog
   const [searchTerm, setSearchTerm] = useState('');
 
   const apiRootUrl = getApiRootUrl();
@@ -59,36 +61,8 @@ export function InstanceList() {
     refetchInterval: 15000, 
   });
 
-  useEffect(() => {
-    if (!apiRootUrl || !token) return;
-
-    const sseUrl = getEventsUrl(apiRootUrl, token);
-    // Actual EventSource connection logic would go here if SSE authentication is handled.
-    // For now, updates are primarily driven by query refetching and mutations.
-    /*
-    const eventSource = new EventSource(sseUrl);
-
-    eventSource.onmessage = (event) => {
-      console.log("SSE Event Received:", event.data);
-      try {
-        const parsedData = JSON.parse(event.data);
-        queryClient.invalidateQueries({ queryKey: ['instances'] });
-        toast({ title: "实例更新", description: "一个实例已更新。" });
-      } catch (e) {
-        console.error("无法解析 SSE 事件数据:", e);
-      }
-    };
-
-    eventSource.onerror = (err) => {
-      console.error("EventSource 失败:", err);
-    };
-    
-    return () => {
-      eventSource.close();
-    };
-    */
-  }, [apiRootUrl, token, queryClient, toast]);
-
+  // The EventSource connection logic is in EventLog.tsx
+  // No need to duplicate SSE connection logic here. Query refetching handles updates.
 
   const updateInstanceMutation = useMutation({
     mutationFn: ({ instanceId, action }: { instanceId: string, action: UpdateInstanceRequest['action']}) => {
@@ -133,6 +107,10 @@ export function InstanceList() {
     },
   });
 
+  // Mutation for modifying instance configuration (URL) is handled within ModifyInstanceDialog
+  // or can be defined here if preferred and passed down.
+  // For simplicity, keeping it within ModifyInstanceDialog for now.
+
   const filteredInstances = instances?.filter(instance =>
     instance.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
     instance.url.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -148,13 +126,13 @@ export function InstanceList() {
         <TableCell><Skeleton className="h-4 w-40" /></TableCell>
         <TableCell><Skeleton className="h-4 w-16" /></TableCell>
         <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-        <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+        <TableCell><Skeleton className="h-4 w-24" /></TableCell> {/* Adjusted for new button */}
       </TableRow>
     ))
   );
 
-  if (!apiConfig && !isLoadingInstances) { // Check if apiConfig is missing and not loading
-     return null; // Or some placeholder indicating API config is needed
+  if (!apiConfig && !isLoadingInstances) {
+     return null;
   }
 
   return (
@@ -228,6 +206,10 @@ export function InstanceList() {
                           <Eye className="h-4 w-4" />
                           <span className="sr-only">查看详情</span>
                         </Button>
+                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedInstanceForModify(instance)}>
+                          <Pencil className="h-4 w-4" />
+                          <span className="sr-only">修改</span>
+                        </Button>
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedInstanceForOptimize(instance)}>
                           <Wand2 className="h-4 w-4" />
                           <span className="sr-only">优化</span>
@@ -242,7 +224,7 @@ export function InstanceList() {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center h-24">
+                  <TableCell colSpan={7} className="text-center h-24"> {/* Adjusted colSpan */}
                     {searchTerm ? "未找到与您搜索匹配的实例。" : apiConfig ? "无可用实例。" : "请先配置API。"}
                   </TableCell>
                 </TableRow>
@@ -268,6 +250,13 @@ export function InstanceList() {
         instance={selectedInstanceForOptimize}
         open={!!selectedInstanceForOptimize}
         onOpenChange={(open) => !open && setSelectedInstanceForOptimize(null)}
+      />
+      <ModifyInstanceDialog
+        instance={selectedInstanceForModify}
+        open={!!selectedInstanceForModify}
+        onOpenChange={(open) => {
+          if (!open) setSelectedInstanceForModify(null);
+        }}
       />
     </Card>
   );
