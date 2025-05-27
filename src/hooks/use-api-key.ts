@@ -63,7 +63,7 @@ export function useApiConfig() {
   }, []);
 
   const addOrUpdateApiConfig = useCallback((config: Omit<NamedApiConfig, 'id'> & { id?: string }) => {
-    let newId = config.id || uuidv4();
+    const newId = config.id || uuidv4();
     const newConfigWithId = { ...config, id: newId };
     
     setApiConfigsList(prevList => {
@@ -78,19 +78,20 @@ export function useApiConfig() {
       saveApiConfigsList(newList);
       return newList;
     });
-    saveActiveConfigId(newId); // Automatically set the new/updated config as active
+    // Do not automatically set as active, let caller decide.
     return newConfigWithId;
-  }, [saveApiConfigsList, saveActiveConfigId]);
+  }, [saveApiConfigsList]);
 
   const deleteApiConfig = useCallback((id: string) => {
     setApiConfigsList(prevList => {
       const newList = prevList.filter(c => c.id !== id);
       saveApiConfigsList(newList);
+      if (activeConfigId === id) {
+        // If the active config was deleted, try to set the first in the list as active
+        saveActiveConfigId(newList.length > 0 ? newList[0].id : null);
+      }
       return newList;
     });
-    if (activeConfigId === id) {
-      saveActiveConfigId(null); // Clear active if it was the one deleted
-    }
   }, [activeConfigId, saveApiConfigsList, saveActiveConfigId]);
 
   const clearActiveApiConfig = useCallback(() => {
@@ -102,19 +103,26 @@ export function useApiConfig() {
     return apiConfigsList.find(c => c.id === activeConfigId) || null;
   }, [apiConfigsList, activeConfigId]);
 
-  const getApiRootUrl = useCallback((): string | null => {
-    if (!activeApiConfig?.apiUrl) return null;
-    const { apiUrl, prefixPath } = activeApiConfig;
+  // Stricter getters: require an ID
+  const getApiConfigById = useCallback((id: string): NamedApiConfig | null => {
+    return apiConfigsList.find(c => c.id === id) || null;
+  }, [apiConfigsList]);
+
+  const getApiRootUrl = useCallback((id: string): string | null => {
+    const config = getApiConfigById(id);
+    if (!config?.apiUrl) return null;
+    const { apiUrl, prefixPath } = config;
     let base = apiUrl.replace(/\/+$/, ''); 
     if (prefixPath && prefixPath.trim() !== '') {
       base += `/${prefixPath.replace(/^\/+|\/+$/g, '').trim()}`; 
     }
     return base;
-  }, [activeApiConfig]);
+  }, [getApiConfigById]);
 
-  const getToken = useCallback((): string | null => {
-    return activeApiConfig?.token || null;
-  }, [activeApiConfig]);
+  const getToken = useCallback((id: string): string | null => {
+    const config = getApiConfigById(id);
+    return config?.token || null;
+  }, [getApiConfigById]);
 
   return { 
     apiConfigsList,
@@ -124,7 +132,8 @@ export function useApiConfig() {
     deleteApiConfig,
     setActiveApiConfigId: saveActiveConfigId,
     clearActiveApiConfig,
-    getApiRootUrl, 
-    getToken 
+    getApiRootUrl, // For specific config by ID
+    getToken,      // For specific config by ID
+    getApiConfigById, // Helper to get full config
   };
 }

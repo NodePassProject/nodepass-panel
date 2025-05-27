@@ -33,7 +33,7 @@ interface ModifyInstanceDialogProps {
 export function ModifyInstanceDialog({ instance, open, onOpenChange }: ModifyInstanceDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { getApiRootUrl, getToken } = useApiConfig();
+  const { activeApiConfig, getApiRootUrl, getToken } = useApiConfig();
 
   const form = useForm<z.infer<typeof modifyInstanceConfigSchema>>({
     resolver: zodResolver(modifyInstanceConfigSchema),
@@ -52,8 +52,9 @@ export function ModifyInstanceDialog({ instance, open, onOpenChange }: ModifyIns
 
   const modifyInstanceMutation = useMutation({
     mutationFn: (data: { instanceId: string; config: ModifyInstanceConfigRequest }) => {
-      const apiRootUrl = getApiRootUrl();
-      const token = getToken();
+      if (!activeApiConfig) throw new Error("没有活动的 API 配置。");
+      const apiRootUrl = getApiRootUrl(activeApiConfig.id);
+      const token = getToken(activeApiConfig.id);
       if (!apiRootUrl || !token) throw new Error("API 配置不可用。");
       if (!data.instanceId) throw new Error("实例 ID 未提供。");
       return nodePassApi.modifyInstanceConfig(data.instanceId, data.config, apiRootUrl, token);
@@ -63,7 +64,7 @@ export function ModifyInstanceDialog({ instance, open, onOpenChange }: ModifyIns
         title: '实例已修改',
         description: `实例 ${updatedInstance.id} 的配置已成功更新。`,
       });
-      queryClient.invalidateQueries({ queryKey: ['instances'] });
+      queryClient.invalidateQueries({ queryKey: ['instances', activeApiConfig?.id] });
       onOpenChange(false);
     },
     onError: (error: any) => {
@@ -92,7 +93,7 @@ export function ModifyInstanceDialog({ instance, open, onOpenChange }: ModifyIns
             修改实例配置
           </DialogTitle>
           <DialogDescription>
-            修改实例 <span className="font-semibold">{instance.id}</span> 的 URL。
+            修改实例 <span className="font-semibold">{instance.id}</span> 的 URL (在API: {activeApiConfig?.name || 'N/A'})。
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -119,7 +120,7 @@ export function ModifyInstanceDialog({ instance, open, onOpenChange }: ModifyIns
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={modifyInstanceMutation.isPending}>
                 取消
               </Button>
-              <Button type="submit" disabled={modifyInstanceMutation.isPending}>
+              <Button type="submit" disabled={modifyInstanceMutation.isPending || !activeApiConfig}>
                 {modifyInstanceMutation.isPending ? '保存中...' : '保存更改'}
               </Button>
             </DialogFooter>

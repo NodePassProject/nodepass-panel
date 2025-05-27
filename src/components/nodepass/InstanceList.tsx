@@ -40,7 +40,7 @@ function formatBytes(bytes: number) {
 export function InstanceList() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { getApiRootUrl, getToken, activeApiConfig } = useApiConfig(); // Use activeApiConfig for conditional text
+  const { activeApiConfig, getApiRootUrl, getToken } = useApiConfig();
 
   const [selectedInstanceForDetails, setSelectedInstanceForDetails] = useState<Instance | null>(null);
   const [selectedInstanceForDelete, setSelectedInstanceForDelete] = useState<Instance | null>(null);
@@ -48,31 +48,36 @@ export function InstanceList() {
   const [selectedInstanceForModify, setSelectedInstanceForModify] = useState<Instance | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const apiRootUrl = getApiRootUrl();
-  const token = getToken();
+  const activeApiConfigId = activeApiConfig?.id;
 
   const { data: instances, isLoading: isLoadingInstances, error: instancesError } = useQuery<Instance[], Error>({
-    queryKey: ['instances', apiRootUrl, token],
+    queryKey: ['instances', activeApiConfigId],
     queryFn: () => {
-      if (!apiRootUrl || !token) throw new Error("API 配置不可用或不完整。");
-      return nodePassApi.getInstances(apiRootUrl, token);
+      if (!activeApiConfigId) throw new Error("没有活动的API配置ID。");
+      const apiRoot = getApiRootUrl(activeApiConfigId);
+      const token = getToken(activeApiConfigId);
+      if (!apiRoot || !token) throw new Error("活动API配置不完整或无效。");
+      return nodePassApi.getInstances(apiRoot, token);
     },
-    enabled: !!apiRootUrl && !!token,
+    enabled: !!activeApiConfigId, // Only fetch if there's an active API config
     refetchInterval: 15000,
   });
 
 
   const updateInstanceMutation = useMutation({
     mutationFn: ({ instanceId, action }: { instanceId: string, action: UpdateInstanceRequest['action']}) => {
-      if (!apiRootUrl || !token) throw new Error("API 配置不可用。");
-      return nodePassApi.updateInstance(instanceId, { action }, apiRootUrl, token);
+      if (!activeApiConfigId) throw new Error("没有活动的 API 配置。");
+      const apiRoot = getApiRootUrl(activeApiConfigId);
+      const token = getToken(activeApiConfigId);
+      if (!apiRoot || !token) throw new Error("API 配置不可用。");
+      return nodePassApi.updateInstance(instanceId, { action }, apiRoot, token);
     },
     onSuccess: (data) => {
       toast({
         title: '实例已更新',
         description: `实例 ${data.id} 状态已更改为 ${data.status}。`,
       });
-      queryClient.invalidateQueries({ queryKey: ['instances', apiRootUrl, token] });
+      queryClient.invalidateQueries({ queryKey: ['instances', activeApiConfigId] });
     },
     onError: (error: any) => {
       toast({
@@ -85,15 +90,18 @@ export function InstanceList() {
 
   const deleteInstanceMutation = useMutation({
     mutationFn: (instanceId: string) => {
-      if (!apiRootUrl || !token) throw new Error("API 配置不可用。");
-      return nodePassApi.deleteInstance(instanceId, apiRootUrl, token);
+      if (!activeApiConfigId) throw new Error("没有活动的 API 配置。");
+      const apiRoot = getApiRootUrl(activeApiConfigId);
+      const token = getToken(activeApiConfigId);
+      if (!apiRoot || !token) throw new Error("API 配置不可用。");
+      return nodePassApi.deleteInstance(instanceId, apiRoot, token);
     },
     onSuccess: (_, instanceId) => {
       toast({
         title: '实例已删除',
         description: `实例 ${instanceId} 已删除。`,
       });
-      queryClient.invalidateQueries({ queryKey: ['instances', apiRootUrl, token] });
+      queryClient.invalidateQueries({ queryKey: ['instances', activeApiConfigId] });
       setSelectedInstanceForDelete(null);
     },
     onError: (error: any) => {
@@ -128,14 +136,11 @@ export function InstanceList() {
     ))
   );
 
-  // This component should only be rendered if activeApiConfig is true (handled in HomePage)
-  // So, if apiRootUrl or token is missing here, it's an unexpected state.
-
   return (
     <Card className="shadow-lg mt-6">
       <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
         <div>
-          <CardTitle className="text-xl">实例概览</CardTitle>
+          <CardTitle className="text-xl">实例概览 (API: {activeApiConfig?.name || 'N/A'})</CardTitle>
           <p className="text-sm text-muted-foreground">管理和监控您的 NodePass 实例。</p>
         </div>
         <div className="relative mt-4 sm:mt-0 w-full sm:w-64">
@@ -150,12 +155,18 @@ export function InstanceList() {
         </div>
       </CardHeader>
       <CardContent>
-        {instancesError && (
+        {!activeApiConfig && (
+          <div className="text-center py-10 text-muted-foreground">
+            请先从顶部设置菜单选择一个活动的 API 连接。
+          </div>
+        )}
+        {activeApiConfig && instancesError && (
           <div className="text-destructive-foreground bg-destructive p-4 rounded-md flex items-center">
             <AlertTriangle className="h-5 w-5 mr-2" />
             加载实例错误: {instancesError.message}
           </div>
         )}
+        {activeApiConfig && !instancesError && (
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -170,7 +181,7 @@ export function InstanceList() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoadingInstances && !instancesError ? renderSkeletons() :
+              {isLoadingInstances ? renderSkeletons() :
                 filteredInstances && filteredInstances.length > 0 ? (
                 filteredInstances.map((instance) => (
                   <TableRow key={instance.id}>
@@ -221,17 +232,14 @@ export function InstanceList() {
               ) : (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center h-24">
-                    {instancesError ? `加载实例时出错` : /* Error already shown above */
-                     searchTerm ? "未找到与您搜索匹配的实例。" :
-                     (apiRootUrl && token) ? "无可用实例。" :
-                     "请先选择或添加一个API连接。"
-                    }
+                    { searchTerm ? "未找到与您搜索匹配的实例。" : "无可用实例。" }
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
         </div>
+        )}
       </CardContent>
 
       <InstanceDetailsModal

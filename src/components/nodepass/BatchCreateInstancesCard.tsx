@@ -10,9 +10,9 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
-import { batchCreateInstancesSchema, createInstanceSchema } from '@/zod-schemas/nodepass'; // Assuming batch schema exists
+import { batchCreateInstancesSchema, createInstanceSchema } from '@/zod-schemas/nodepass';
 import type { CreateInstanceRequest } from '@/types/nodepass';
-import { Layers } from 'lucide-react'; // Changed icon from PlusCircle
+import { Layers } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { nodePassApi } from '@/lib/api';
 import { useApiConfig } from '@/hooks/use-api-key';
@@ -20,7 +20,7 @@ import { useApiConfig } from '@/hooks/use-api-key';
 export function BatchCreateInstancesCard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { getApiRootUrl, getToken } = useApiConfig();
+  const { activeApiConfig, getApiRootUrl, getToken } = useApiConfig();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<z.infer<typeof batchCreateInstancesSchema>>({
@@ -32,15 +32,23 @@ export function BatchCreateInstancesCard() {
 
   const createInstanceMutation = useMutation({
     mutationFn: (data: CreateInstanceRequest) => {
-      const apiRootUrl = getApiRootUrl();
-      const token = getToken();
+      if (!activeApiConfig) throw new Error("没有活动的 API 配置。");
+      const apiRootUrl = getApiRootUrl(activeApiConfig.id);
+      const token = getToken(activeApiConfig.id);
       if (!apiRootUrl || !token) throw new Error("API 配置不可用。");
       return nodePassApi.createInstance(data, apiRootUrl, token);
     },
-    // Individual success/error handling will be done in the onSubmit function
   });
 
   async function onSubmit(values: z.infer<typeof batchCreateInstancesSchema>) {
+    if (!activeApiConfig) {
+      toast({
+        title: '操作失败',
+        description: '没有活动的 API 配置，无法创建实例。',
+        variant: 'destructive',
+      });
+      return;
+    }
     setIsSubmitting(true);
     const urls = values.urls.split('\n').map(url => url.trim()).filter(url => url.length > 0);
     let successfulCreations = 0;
@@ -58,7 +66,6 @@ export function BatchCreateInstancesCard() {
 
     for (const url of urls) {
       try {
-        // Validate each URL individually using the single instance schema
         createInstanceSchema.parse({ url }); 
         await createInstanceMutation.mutateAsync({ url });
         successfulCreations++;
@@ -83,7 +90,7 @@ export function BatchCreateInstancesCard() {
     }
 
     if (successfulCreations > 0) {
-      queryClient.invalidateQueries({ queryKey: ['instances'] });
+      queryClient.invalidateQueries({ queryKey: ['instances', activeApiConfig.id] });
     }
     
     toast({
@@ -92,7 +99,7 @@ export function BatchCreateInstancesCard() {
     });
 
     if (successfulCreations > 0 && failedCreations === 0) {
-        form.reset(); // Reset form only if all were successful or some were successful and no failures
+        form.reset(); 
     }
     setIsSubmitting(false);
   }
@@ -105,7 +112,7 @@ export function BatchCreateInstancesCard() {
           批量创建实例
         </CardTitle>
         <CardDescription>
-          在下面的文本框中每行输入一个实例 URL，然后点击按钮批量创建它们。
+          在文本框中每行输入一个实例 URL，批量创建到当前活动的API配置: {activeApiConfig?.name || 'N/A'}。
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -129,7 +136,7 @@ export function BatchCreateInstancesCard() {
                 </FormItem>
               )}
             />
-            <Button type="submit" className="w-full sm:w-auto" disabled={isSubmitting}>
+            <Button type="submit" className="w-full sm:w-auto" disabled={isSubmitting || !activeApiConfig}>
               {isSubmitting ? '创建中...' : '批量创建实例'}
             </Button>
           </form>

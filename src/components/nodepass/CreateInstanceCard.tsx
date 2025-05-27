@@ -21,7 +21,7 @@ import { useApiConfig } from '@/hooks/use-api-key';
 export function CreateInstanceCard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { getApiRootUrl, getToken } = useApiConfig();
+  const { activeApiConfig, getApiRootUrl, getToken } = useApiConfig();
 
   const form = useForm<z.infer<typeof createInstanceSchema>>({
     resolver: zodResolver(createInstanceSchema),
@@ -32,8 +32,9 @@ export function CreateInstanceCard() {
 
   const createInstanceMutation = useMutation({
     mutationFn: (data: CreateInstanceRequest) => {
-      const apiRootUrl = getApiRootUrl();
-      const token = getToken();
+      if (!activeApiConfig) throw new Error("没有活动的 API 配置。");
+      const apiRootUrl = getApiRootUrl(activeApiConfig.id);
+      const token = getToken(activeApiConfig.id);
       if (!apiRootUrl || !token) throw new Error("API 配置不可用。");
       return nodePassApi.createInstance(data, apiRootUrl, token);
     },
@@ -42,7 +43,7 @@ export function CreateInstanceCard() {
         title: '实例已创建',
         description: '新实例已成功创建。',
       });
-      queryClient.invalidateQueries({ queryKey: ['instances'] });
+      queryClient.invalidateQueries({ queryKey: ['instances', activeApiConfig?.id] });
       form.reset();
     },
     onError: (error: any) => {
@@ -66,7 +67,7 @@ export function CreateInstanceCard() {
           创建新实例
         </CardTitle>
         <CardDescription>
-          提供命令 URL以设置新的 NodePass 实例。
+          提供命令 URL以设置新的 NodePass 实例 (将在当前活动的API配置: {activeApiConfig?.name || 'N/A'} 中创建)。
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -90,7 +91,7 @@ export function CreateInstanceCard() {
                 </FormItem>
               )}
             />
-            <Button type="submit" className="w-full sm:w-auto" disabled={createInstanceMutation.isPending}>
+            <Button type="submit" className="w-full sm:w-auto" disabled={createInstanceMutation.isPending || !activeApiConfig}>
               {createInstanceMutation.isPending ? '创建中...' : '创建实例'}
             </Button>
           </form>
