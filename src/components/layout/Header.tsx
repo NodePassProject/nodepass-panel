@@ -11,16 +11,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
   DropdownMenuLabel,
-  DropdownMenuPortal
 } from "@/components/ui/dropdown-menu"
-import { useApiConfig } from '@/hooks/use-api-key';
+import { useApiConfig, type NamedApiConfig } from '@/hooks/use-api-key';
 
 interface HeaderProps {
-  onManageApiConfigs: () => void; // Opens dialog to edit current or add new
+  onManageApiConfigs: (configToEdit?: NamedApiConfig | null) => void; // Updated prop
   onClearActiveConfig?: () => void;
   hasActiveApiConfig: boolean;
 }
@@ -34,12 +30,11 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
   };
 
   const handleDeleteApiConfig = (id: string, event: React.MouseEvent) => {
-    event.stopPropagation(); // Prevent DropdownMenuItem onClick from closing the menu
+    event.stopPropagation(); // Prevent DropdownMenuItem onClick from closing the menu if actions are inside
     if (window.confirm(`您确定要删除连接 "${apiConfigsList.find(c=>c.id === id)?.name}" 吗？`)) {
       deleteApiConfig(id);
     }
   };
-
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -73,51 +68,64 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
                 <Settings className="h-5 w-5" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" className="w-64">
               <DropdownMenuLabel>API 连接</DropdownMenuLabel>
-              {apiConfigsList.length > 0 && (
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
-                    <Server className="mr-2 h-4 w-4" />
-                    <span>切换连接</span>
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuPortal>
-                    <DropdownMenuSubContent>
-                      {apiConfigsList.map(config => (
-                        <DropdownMenuItem key={config.id} onClick={() => handleSwitchApiConfig(config.id)} className="justify-between">
-                          <div className="flex items-center">
-                            {activeApiConfig?.id === config.id && <Check className="mr-2 h-4 w-4 text-green-500" />}
-                            <span>{config.name}</span>
-                          </div>
-                           <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-6 w-6 text-destructive hover:text-destructive/80"
-                              onClick={(e) => handleDeleteApiConfig(config.id, e)}
-                              aria-label={`删除连接 ${config.name}`}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                        </DropdownMenuItem>
-                      ))}
-                       <DropdownMenuSeparator />
-                       <DropdownMenuItem onClick={onManageApiConfigs}>
-                        <PlusCircle className="mr-2 h-4 w-4" />
-                        <span>添加新连接...</span>
-                      </DropdownMenuItem>
-                    </DropdownMenuSubContent>
-                  </DropdownMenuPortal>
-                </DropdownMenuSub>
-              )}
-               <DropdownMenuItem onClick={onManageApiConfigs}>
-                {hasActiveApiConfig ? <Edit3 className="mr-2 h-4 w-4" /> : <PlusCircle className="mr-2 h-4 w-4" />}
-                <span>{hasActiveApiConfig ? '编辑当前连接' : '添加新连接'}</span>
+              <DropdownMenuItem onClick={() => onManageApiConfigs(null)}>
+                <PlusCircle className="mr-2 h-4 w-4" />
+                <span>添加新连接</span>
               </DropdownMenuItem>
+
+              {apiConfigsList.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>管理已有连接</DropdownMenuLabel>
+                  <div className="max-h-60 overflow-y-auto"> {/* Scrollable if many configs */}
+                    {apiConfigsList.map(config => (
+                      <DropdownMenuItem key={config.id} className="flex justify-between items-center pr-1">
+                        <div 
+                          className="flex items-center flex-grow cursor-pointer mr-2" 
+                          onClick={() => handleSwitchApiConfig(config.id)}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => e.key === 'Enter' && handleSwitchApiConfig(config.id)}
+                        >
+                          {activeApiConfig?.id === config.id && <Check className="mr-2 h-4 w-4 text-green-500" />}
+                          <span className={`truncate ${activeApiConfig?.id !== config.id ? 'ml-6' : ''}`}>{config.name}</span>
+                        </div>
+                        <div className="flex items-center shrink-0">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-7 w-7"
+                            onClick={() => onManageApiConfigs(config)}
+                            aria-label={`编辑连接 ${config.name}`}
+                          >
+                            <Edit3 className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-7 w-7 text-destructive hover:text-destructive/80"
+                            onClick={(e) => handleDeleteApiConfig(config.id, e)}
+                            aria-label={`删除连接 ${config.name}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </DropdownMenuItem>
+                    ))}
+                  </div>
+                </>
+              )}
+
               {hasActiveApiConfig && onClearActiveConfig && (
-                 <DropdownMenuItem onClick={onClearActiveConfig}>
-                    <LogOut className="mr-2 h-4 w-4" />
-                    <span>断开当前连接</span>
-                </DropdownMenuItem>
+                 <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={onClearActiveConfig}>
+                      <LogOut className="mr-2 h-4 w-4" />
+                      <span>断开当前连接</span>
+                  </DropdownMenuItem>
+                 </>
               )}
             </DropdownMenuContent>
           </DropdownMenu>

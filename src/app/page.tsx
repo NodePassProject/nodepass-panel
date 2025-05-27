@@ -10,7 +10,7 @@ import { EventLog } from '@/components/nodepass/EventLog';
 import { useApiConfig, type NamedApiConfig } from '@/hooks/use-api-key';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { BatchCreateInstancesCard } from '@/components/nodepass/BatchCreateInstancesCard'; // Keep this for tunnel instances
+import { BatchCreateInstancesCard } from '@/components/nodepass/BatchCreateInstancesCard'; 
 
 
 export default function HomePage() {
@@ -28,41 +28,35 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!isLoadingApiConfig && apiConfigsList.length === 0) {
-      // No configs exist, prompt to add the first one
-      setEditingApiConfig(null); // Ensure it's in "create" mode
+      setEditingApiConfig(null); 
       setIsApiConfigDialogOpen(true);
-    } else if (!isLoadingApiConfig && !activeApiConfig && apiConfigsList.length > 0) {
-      // Configs exist, but none active. Could auto-select first or prompt.
-      // For now, user needs to select via header.
-      // Or, we can prompt to open a management dialog later.
     }
-  }, [activeApiConfig, apiConfigsList, isLoadingApiConfig]);
+  }, [apiConfigsList, isLoadingApiConfig]);
 
   const handleSaveApiConfig = (configToSave: Omit<NamedApiConfig, 'id'> & { id?: string }) => {
     const savedConfig = addOrUpdateApiConfig(configToSave);
-    setActiveApiConfigId(savedConfig.id); // Ensure the newly saved/updated config is active
+    setActiveApiConfigId(savedConfig.id); 
     setEditingApiConfig(null);
     setIsApiConfigDialogOpen(false);
   };
   
+  // This function is passed to Header to open the dialog for adding new or editing existing.
+  // If configToEdit is null/undefined, dialog opens in "create new" mode.
+  // If configToEdit is provided, dialog opens in "edit" mode for that config.
   const handleOpenApiConfigDialog = (configToEdit?: NamedApiConfig | null) => {
     setEditingApiConfig(configToEdit || null);
     setIsApiConfigDialogOpen(true);
   };
 
-  const handleLogout = () => { // This now means "Deselect Active API Config"
+  const handleLogout = () => { 
     clearActiveApiConfig();
-    // Optionally, if no configs left, or to guide user:
-    // if (apiConfigsList.length === 0) {
-    //   setIsApiConfigDialogOpen(true); 
-    // }
   };
 
   if (isLoadingApiConfig) {
     return (
       <div className="flex flex-col min-h-screen">
         <Header 
-          onManageApiConfigs={() => handleOpenApiConfigDialog(activeApiConfig)} 
+          onManageApiConfigs={handleOpenApiConfigDialog} 
           hasActiveApiConfig={!!activeApiConfig} 
           onClearActiveConfig={handleLogout}
         />
@@ -77,7 +71,7 @@ export default function HomePage() {
   return (
     <div className="flex flex-col min-h-screen bg-background">
       <Header 
-        onManageApiConfigs={() => handleOpenApiConfigDialog(activeApiConfig || undefined)} 
+        onManageApiConfigs={handleOpenApiConfigDialog} // Pass the unified handler
         hasActiveApiConfig={!!activeApiConfig} 
         onClearActiveConfig={handleLogout}
       />
@@ -96,7 +90,7 @@ export default function HomePage() {
             </h2>
             <p className="text-muted-foreground mb-6">
               {apiConfigsList.length > 0 
-                ? '请从顶部设置菜单中选择一个 API 连接，或管理您的连接。' 
+                ? '请从顶部设置菜单中选择一个 API 连接，或添加一个新的连接。' 
                 : '请添加您的第一个 NodePass API 连接以开始管理实例。'}
             </p>
             {apiConfigsList.length === 0 && (
@@ -106,7 +100,7 @@ export default function HomePage() {
             )}
              {apiConfigsList.length > 0 && !activeApiConfig && (
               <p className="text-sm text-muted-foreground mt-4">
-                您可以通过点击页面右上角的设置图标来切换或管理 API 连接。
+                您可以通过点击页面右上角的设置图标来选择、添加或管理 API 连接。
               </p>
             )}
           </div>
@@ -117,7 +111,7 @@ export default function HomePage() {
         onOpenChange={setIsApiConfigDialogOpen}
         onSave={handleSaveApiConfig}
         currentConfig={editingApiConfig}
-        isEditing={!!editingApiConfig}
+        isEditing={!!editingApiConfig} // isEditing is true if editingApiConfig is not null
       />
       <footer className="py-6 text-center text-sm text-muted-foreground border-t">
         NodePass 管理器 &copy; {new Date().getFullYear()}
