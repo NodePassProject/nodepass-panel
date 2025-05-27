@@ -136,6 +136,7 @@ export default function TopologyPage() {
           const serverPos = newPositions.get(server.id);
           const serverApiId = server.apiId;
           
+          // Corrected logic: Client's <tunnel_addr> connects to Server's <target_addr>
           if (serverTargetAddr && clientTunnelAddr === serverTargetAddr && serverPos) {
             newConnections.push({ 
               from: client.id, 
@@ -168,6 +169,7 @@ export default function TopologyPage() {
       let currentErrors = new Map<string, string>();
 
       for (const config of apiConfigsList) {
+        // Pass config.id to getApiRootUrl and getToken
         const apiRoot = getApiRootUrl(config.id);
         const token = getToken(config.id);
 
