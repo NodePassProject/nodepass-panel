@@ -9,7 +9,7 @@ async function request<T>(
   const headers = new Headers(options.headers || {});
   headers.append('Content-Type', 'application/json');
   if (token) {
-    headers.append('X-API-Key', token); // The header name is still X-API-Key as per typical conventions
+    headers.append('X-API-Key', token);
   }
 
   const response = await fetch(fullRequestUrl, {
@@ -54,13 +54,15 @@ export const nodePassApi = {
     request<void>(`${apiRootUrl}/v1/instances/${id}`, { method: 'DELETE' }, token),
 };
 
-// For EventSource, authentication needs careful handling.
-// Standard EventSource cannot send custom headers like X-API-Key.
-// This function now appends the token as a query parameter if available.
-export const getEventsUrl = (apiRootUrl: string, token?: string | null): string => {
-  const baseUrl = `${apiRootUrl}/events`;
-  if (token) {
-    return `${baseUrl}?token=${encodeURIComponent(token)}`;
-  }
-  return baseUrl;
+// For EventSource, authentication using custom headers like X-API-Key is not possible.
+// The OpenAPI spec indicates /events uses X-API-Key.
+// This function provides the base URL for events.
+// If the server has an alternative auth method for EventSource (e.g. cookies, or a non-standard query param),
+// that would need to be handled by the server.
+export const getEventsUrl = (apiRootUrl: string): string => {
+  // The token is NOT appended as a query parameter here because:
+  // 1. The OpenAPI spec for /events indicates ApiKeyAuth (X-API-Key header).
+  // 2. EventSource cannot send custom headers.
+  // If the server supports token-based auth via query for /events, it's a non-standard extension.
+  return `${apiRootUrl}/events`;
 };

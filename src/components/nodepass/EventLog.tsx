@@ -13,14 +13,13 @@ import { getEventsUrl } from '@/lib/api';
 
 export function EventLog() {
   const [events, setEvents] = useState<InstanceEvent[]>([]);
-  const { getApiRootUrl, getToken } = useApiConfig();
+  const { getApiRootUrl, apiConfig } = useApiConfig(); // getToken is not directly used here anymore for EventSource
   const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
     const apiRootUrl = getApiRootUrl();
-    const token = getToken();
-
-    if (!apiRootUrl || !token) {
+    
+    if (!apiConfig || !apiRootUrl) { // Check for apiConfig as well to ensure settings are present
       setEvents([{type: 'log', data: 'API 配置未设置。事件流已禁用。', timestamp: new Date().toISOString()}]);
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
@@ -29,21 +28,23 @@ export function EventLog() {
       return;
     }
     
-    setEvents([{type: 'log', data: '正在初始化事件流...', timestamp: new Date().toISOString()}]);
+    setEvents([{type: 'log', data: '正在初始化事件流... (注意：EventSource 无法发送 X-API-Key 进行认证)', timestamp: new Date().toISOString()}]);
     
-    const sseUrl = getEventsUrl(apiRootUrl, token);
+    // Get the base URL for events. Authentication via X-API-Key header is expected by the spec for /events,
+    // but EventSource cannot send custom headers. The server might allow unauthenticated connections
+    // or have other auth mechanisms (e.g., cookies, or a non-standard query param if implemented).
+    const sseUrl = getEventsUrl(apiRootUrl);
     // console.log(`Attempting to connect to EventSource: ${sseUrl}`);
 
-    // Close existing connection if any
     if (eventSourceRef.current) {
         eventSourceRef.current.close();
     }
 
-    const newEventSource = new EventSource(sseUrl);
+    const newEventSource = new EventSource(sseUrl, { withCredentials: true }); // withCredentials might be useful if server uses cookie-based auth for SSE
     eventSourceRef.current = newEventSource;
 
     newEventSource.onopen = () => {
-      setEvents((prevEvents) => [{type: 'log', data: '事件流已连接。等待事件...', timestamp: new Date().toISOString()}, ...prevEvents.filter(e => e.data !== '正在初始化事件流...')]);
+      setEvents((prevEvents) => [{type: 'log', data: '事件流已连接。等待事件... (认证状态取决于服务器配置)', timestamp: new Date().toISOString()}, ...prevEvents.filter(e => !e.data.startsWith('正在初始化事件流...'))]);
     };
 
     newEventSource.onmessage = (event) => {
@@ -51,10 +52,10 @@ export function EventLog() {
         const newEventData = JSON.parse(event.data);
         const newEvent: InstanceEvent = {
             type: newEventData.type || 'log',
-            data: newEventData.data || newEventData, // Handle cases where data might be the root object
+            data: newEventData.data || newEventData, 
             timestamp: newEventData.timestamp || new Date().toISOString()
         };
-        setEvents((prevEvents) => [newEvent, ...prevEvents.slice(0, 99)]); // Keep last 100 events
+        setEvents((prevEvents) => [newEvent, ...prevEvents.slice(0, 99)]); 
       } catch (error) {
         console.error("无法解析事件数据:", error, "原始数据:", event.data);
         const errorEvent: InstanceEvent = { type: 'log', data: `解析事件错误: ${event.data}`, timestamp: new Date().toISOString() };
@@ -66,15 +67,13 @@ export function EventLog() {
       console.error("EventSource 错误:", error);
       let errorMessage = 'EventSource 连接错误。';
       if (newEventSource.readyState === EventSource.CLOSED) {
-        errorMessage = 'EventSource 连接已关闭。可能由于认证失败或服务器问题。';
+        errorMessage = 'EventSource 连接已关闭。可能由于服务器端认证失败或网络问题。';
       } else if (newEventSource.readyState === EventSource.CONNECTING) {
         errorMessage = 'EventSource 正在尝试重新连接...';
       }
       
       const errorEvent: InstanceEvent = { type: 'log', data: errorMessage, timestamp: new Date().toISOString() };
       setEvents((prevEvents) => [errorEvent, ...prevEvents.slice(0,99)]);
-      // Don't close here if it's CONNECTING, EventSource handles retries
-      // newEventSource.close(); // Or implement custom retry logic
     };
 
     return () => {
@@ -84,7 +83,7 @@ export function EventLog() {
       eventSourceRef.current = null;
     };
 
-  }, [getApiRootUrl, getToken]);
+  }, [apiConfig, getApiRootUrl]); // Depend on apiConfig directly to re-init if it changes
 
   const getBadgeText = (type: InstanceEvent['type']): string => {
     if (type.includes('created')) return '已创建';
@@ -101,7 +100,7 @@ export function EventLog() {
           实时事件日志
         </CardTitle>
         <CardDescription>
-          来自 NodePass 实例的实时更新。
+          来自 NodePass 实例的实时更新。能否成功认证取决于服务器对 EventSource 的支持。
         </CardDescription>
       </CardHeader>
       <CardContent>
