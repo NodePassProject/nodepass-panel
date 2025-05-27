@@ -20,3 +20,8 @@ export const optimizeInstanceSchema = z.object({
   instanceType: z.enum(["client", "server"], { required_error: "Instance type is required." }),
   performanceCharacteristics: z.string().min(3, "Performance characteristics are required."),
 });
+
+export const batchCreateInstancesSchema = z.object({
+  urls: z.string().min(1, "至少需要一个 URL。"),
+});
+

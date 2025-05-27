@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid'; // For generating unique IDs
 
 const API_CONFIGS_LIST_STORAGE_KEY = 'nodepass_api_configs_list';
