@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
@@ -20,148 +20,194 @@ interface EventLogProps {
 export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
   const [events, setEvents] = useState<InstanceEvent[]>([]);
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    setEvents([]); 
-    
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
+  const processSseMessage = useCallback((messageBlock: string) => {
+    let eventType = 'message'; // Default event type if not specified
+    let eventDataLine = '';
+
+    const lines = messageBlock.split('\n');
+    for (const line of lines) {
+      if (line.startsWith('event:')) {
+        eventType = line.substring('event:'.length).trim();
+      } else if (line.startsWith('data:')) {
+        eventDataLine = line.substring('data:'.length).trim();
+      }
+      // Can also parse id: and retry: if needed
     }
 
-    if (!apiId || !apiRoot || !apiToken || !apiName) {
-      setEvents([{ type: 'log', data: `API 配置无效，事件流禁用。`, timestamp: new Date().toISOString() }]);
-      return;
-    }
-
-    // Use the proxy
-    const actualApiEventsUrl = getEventsUrl(apiRoot); 
-    const proxyEventSourceUrl = `/api/events-proxy?targetUrl=${encodeURIComponent(actualApiEventsUrl)}&token=${encodeURIComponent(apiToken)}`;
-    
-    setEvents([{ type: 'log', data: `正在通过代理 ${proxyEventSourceUrl.split('?')[0]} 初始化事件流...`, timestamp: new Date().toISOString() }]);
-    
-    const newEventSource = new EventSource(proxyEventSourceUrl); 
-    eventSourceRef.current = newEventSource;
-    const currentEffectEventSource = newEventSource; // Capture for closure
-
-    newEventSource.onopen = () => {
-      if (eventSourceRef.current !== currentEffectEventSource) return; // Stale closure
-      const existingMessages = events.filter(e => e.type === 'log' && !e.data.startsWith("正在通过代理"));
-      setEvents([
-        { type: 'log', data: `事件流已通过代理连接。等待事件... (目标: ${actualApiEventsUrl})`, timestamp: new Date().toISOString() },
-        ...existingMessages
-      ].slice(0,100)); // Keep max 100 events
-    };
-
-    newEventSource.addEventListener('instance', (event) => {
-      if (eventSourceRef.current !== currentEffectEventSource) return;
-      console.log('SSE "instance" event received from server:', event.data);
+    if (eventType === 'instance' && eventDataLine) {
+      console.log('SSE "instance" event received (fetch):', eventDataLine);
       try {
-        const serverEventPayload = JSON.parse(event.data as string);
+        const serverEventPayload = JSON.parse(eventDataLine);
         let frontendEventType: InstanceEvent['type'];
-        let frontendEventData: any = serverEventPayload; // Default to full payload for details
+        let frontendEventData: any = serverEventPayload;
         let instanceDetailsPayload: Instance | undefined = serverEventPayload.instance;
 
         switch (serverEventPayload.type) {
           case 'initial':
-          case 'create': // Changed from 'instance_created'
-          case 'update': // Changed from 'instance_updated'
-          case 'delete': // Changed from 'instance_deleted'
+          case 'create':
+          case 'update':
+          case 'delete':
             frontendEventType = serverEventPayload.type;
-            frontendEventData = instanceDetailsPayload || {}; // Use instance for primary data if available
+            frontendEventData = instanceDetailsPayload || {};
             break;
           case 'log':
             frontendEventType = 'log';
             if (serverEventPayload.instance && serverEventPayload.logs) {
-                 frontendEventData = `[${serverEventPayload.instance.id.substring(0,8)}] ${serverEventPayload.logs}`;
+              frontendEventData = `[${serverEventPayload.instance.id.substring(0,8)}] ${serverEventPayload.logs}`;
             } else {
-                frontendEventData = serverEventPayload.logs || `[实例ID: ${instanceDetailsPayload?.id?.substring(0,8) || 'N/A'}] 未知日志内容`;
+              frontendEventData = `[实例ID: ${instanceDetailsPayload?.id?.substring(0,8) || 'N/A'}] 未知日志内容`;
             }
             break;
           case 'shutdown':
-            frontendEventType = 'log'; // Treat shutdown as a log message for UI
+            frontendEventType = 'log';
             frontendEventData = "主控服务即将关闭。事件流已停止。";
-            if (eventSourceRef.current) eventSourceRef.current.close();
+            // Further shutdown handling (e.g., stopping reconnect attempts) might be needed
+            if (abortControllerRef.current) {
+              abortControllerRef.current.abort();
+            }
             break;
           default:
-            console.warn("未知服务器事件类型:", serverEventPayload.type, serverEventPayload);
-            frontendEventType = 'log'; 
+            console.warn("未知服务器事件类型 (fetch):", serverEventPayload.type, serverEventPayload);
+            frontendEventType = 'log';
             frontendEventData = `未知事件 ${serverEventPayload.type}: ${JSON.stringify(serverEventPayload.data || serverEventPayload.instance || serverEventPayload)}`;
             break;
         }
 
         const newEventToLog: InstanceEvent = {
           type: frontendEventType,
-          data: frontendEventData, 
+          data: frontendEventData,
           instanceDetails: instanceDetailsPayload,
           timestamp: serverEventPayload.time || new Date().toISOString(),
         };
         setEvents((prevEvents) => [newEventToLog, ...prevEvents.slice(0, 99)]);
       } catch (error) {
-        console.error("无法解析事件数据:", error, "原始数据:", event.data);
-        const errorEventToLog: InstanceEvent = { type: 'log', data: `解析事件错误: ${event.data}`, timestamp: new Date().toISOString() };
+        console.error("无法解析事件数据 (fetch):", error, "原始数据:", eventDataLine);
+        const errorEventToLog: InstanceEvent = { type: 'log', data: `解析事件错误 (fetch): ${eventDataLine}`, timestamp: new Date().toISOString() };
         setEvents((prevEvents) => [errorEventToLog, ...prevEvents.slice(0, 99)]);
       }
-    });
-    
-    newEventSource.onmessage = (event) => { // Fallback for unnamed events
-        if (eventSourceRef.current !== currentEffectEventSource) return;
-        console.log("收到通用 SSE 消息 (非 'instance' 事件):", event.data);
+    } else if (eventDataLine) { // Generic message
+        console.log("收到通用 SSE 消息 (fetch, 非 'instance' 事件):", eventDataLine);
         const genericEvent: InstanceEvent = {
           type: 'log', 
-          data: `通用消息: ${event.data}`,
+          data: `通用消息 (fetch): ${eventDataLine}`,
           timestamp: new Date().toISOString()
         };
         setEvents((prevEvents) => [genericEvent, ...prevEvents.slice(0, 99)]);
-    };
+    }
+  }, []);
 
-    newEventSource.onerror = (event: Event) => { 
-      if (eventSourceRef.current !== currentEffectEventSource && currentEffectEventSource.readyState !== EventSource.CLOSED) return; 
 
-      const rs = currentEffectEventSource.readyState;
-      let uiErrorMessage: string;
+  const connectWithFetch = useCallback(async () => {
+    if (!apiId || !apiRoot || !apiToken || !apiName) {
+      setEvents([{ type: 'log', data: `API 配置无效，事件流 (fetch) 禁用。`, timestamp: new Date().toISOString() }]);
+      setIsConnected(false);
+      return;
+    }
 
-      if (rs === EventSource.CONNECTING) { // 0
-        uiErrorMessage = `EventSource (代理) 连接出错。检查网络、代理 (${proxyEventSourceUrl.split('?')[0]}) 及目标服务器 (${actualApiEventsUrl}) 日志。`;
-      } else if (rs === EventSource.CLOSED) { // 2
-        uiErrorMessage = `EventSource (代理) 连接已关闭。检查代理 (${proxyEventSourceUrl.split('?')[0]}) 及目标服务器 (${actualApiEventsUrl}) 日志。`;
-      } else { // 1 (OPEN) - unusual to get error in OPEN state unless server sends error then closes
-        uiErrorMessage = `EventSource (代理) 未知连接错误 (状态: ${rs})。检查代理及目标服务器日志。`;
-      }
-      
-      console.error(uiErrorMessage); // Log the determined UI message to console as well for consistency
-      
-      const errorEventLog: InstanceEvent = { type: 'log', data: uiErrorMessage, timestamp: new Date().toISOString() };
-      setEvents((prevEvents) => {
-        // Avoid duplicate error messages if they are the same as the last one
-        if (prevEvents.length > 0 && prevEvents[0].data === uiErrorMessage && prevEvents[0].type === 'log') {
-          return prevEvents; 
-        }
-        return [errorEventLog, ...prevEvents.slice(0, 99)];
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort(); // Abort previous connection if any
+    }
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
+    const eventsUrl = getEventsUrl(apiRoot);
+    setEvents([{ type: 'log', data: `正在初始化事件流 (fetch) 到 ${eventsUrl} (携带 X-API-Key)...`, timestamp: new Date().toISOString() }]);
+    setIsConnected(false);
+
+    try {
+      const response = await fetch(eventsUrl, {
+        method: 'GET',
+        headers: {
+          'X-API-Key': apiToken,
+          'Accept': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+        },
+        signal,
       });
 
-      // The official doc suggests a timeout and retry, but EventSource does this automatically by default.
-      // If automatic retry isn't working, manual retry could be added here, but it's usually not needed.
-    };
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP 错误: ${response.status} ${response.statusText}. Details: ${errorText}`);
+      }
+
+      if (!response.body) {
+        throw new Error("响应体为空，无法读取事件流。");
+      }
+      
+      setIsConnected(true);
+      setEvents(prev => [{ type: 'log', data: `事件流 (fetch) 已连接。等待事件... (目标: ${eventsUrl})`, timestamp: new Date().toISOString() }, ...prev.filter(e => !e.data.startsWith('正在初始化'))]);
+
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        if (signal.aborted) {
+          console.log("Fetch aborted, stopping stream processing.");
+          setIsConnected(false);
+          break;
+        }
+        const { value, done } = await reader.read();
+        if (done) {
+          console.log('事件流 (fetch) 已关闭 (done)。');
+          setIsConnected(false);
+          // Reconnect logic from documentation example
+          if (!signal.aborted) { // Only reconnect if not intentionally aborted
+            reconnectTimeoutRef.current = setTimeout(() => connectWithFetch(), 5000);
+          }
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const messageBlocks = buffer.split('\n\n');
+        buffer = messageBlocks.pop() || ''; // Keep the last incomplete message block
+
+        for (const block of messageBlocks) {
+          if (block.trim() !== '') {
+            processSseMessage(block);
+          }
+        }
+      }
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.log('事件流 (fetch) 连接已中止。');
+        setEvents(prev => [{ type: 'log', data: `事件流 (fetch) 连接已由客户端中止。`, timestamp: new Date().toISOString() }, ...prev]);
+      } else {
+        console.error('事件流 (fetch) 连接错误:', error);
+        const errorMessage = `事件流 (fetch) 连接错误: ${error.message || '未知错误'} (目标: ${eventsUrl})。5秒后尝试重连...`;
+        setEvents(prev => [{ type: 'log', data: errorMessage, timestamp: new Date().toISOString() }, ...prev]);
+        reconnectTimeoutRef.current = setTimeout(() => connectWithFetch(), 5000);
+      }
+      setIsConnected(false);
+    }
+  }, [apiId, apiRoot, apiToken, apiName, processSseMessage]);
+
+  useEffect(() => {
+    connectWithFetch();
 
     return () => {
-      if (currentEffectEventSource) {
-        currentEffectEventSource.close();
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
       }
-      // Ensure the ref is cleared only if it's the one we set up in this effect
-      if (eventSourceRef.current === currentEffectEventSource) {
-         eventSourceRef.current = null;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
       }
+       setEvents(prev => [{ type: 'log', data: `事件流 (fetch) 已断开。`, timestamp: new Date().toISOString() }, ...prev.slice(0,99)]);
+       setIsConnected(false);
     };
-  }, [apiId, apiRoot, apiToken, apiName]); // Dependencies
-
+  }, [connectWithFetch]); // Rerun connectWithFetch if apiId, apiRoot, etc. change
 
   const getBadgeTextAndVariant = (type: InstanceEvent['type']): { text: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' | 'accent' } => {
     switch (type) {
       case 'initial': return { text: '初始', variant: 'default' };
-      case 'create': return { text: '创建', variant: 'default' }; // Use 'default' (primary) for creation
+      case 'create': return { text: '创建', variant: 'default' };
       case 'update': return { text: '更新', variant: 'secondary' };
       case 'delete': return { text: '删除', variant: 'destructive' };
       case 'log': return { text: '日志', variant: 'outline' };
@@ -172,7 +218,6 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
   const isExpandable = (event: InstanceEvent): boolean => {
     if (event.instanceDetails) return true;
     if (event.type === 'log' && typeof event.data === 'string' && event.data.length > 100) return true;
-    // Check if data is an object and not null, and not already covered by instanceDetails
     if (event.type !== 'log' && typeof event.data === 'object' && event.data !== null && !event.instanceDetails) return true;
     return false;
   };
@@ -185,7 +230,10 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
           实时事件日志
         </CardTitle>
         <CardDescription>
-          NodePass 实例实时更新 (API: {apiName || 'N/A'}，通过代理连接)。
+          NodePass 实例实时更新 (API: {apiName || 'N/A'}，通过 Fetch API 连接)。
+          状态: <span className={`font-semibold ${isConnected ? 'text-green-500' : 'text-red-500'}`}>
+            {isConnected ? '已连接' : '未连接'}
+          </span>
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -270,3 +318,5 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
     </Card>
   );
 }
+
+    
