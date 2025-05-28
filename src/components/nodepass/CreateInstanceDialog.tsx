@@ -1,7 +1,7 @@
 
 "use client";
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { z } from 'zod';
@@ -20,11 +20,10 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { createInstanceFormSchema, createInstanceApiSchema } from '@/zod-schemas/nodepass';
-import type { CreateInstanceRequest } from '@/types/nodepass';
-import { PlusCircle } from 'lucide-react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import type { CreateInstanceRequest, Instance } from '@/types/nodepass';
+import { PlusCircle, Loader2 } from 'lucide-react';
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { nodePassApi } from '@/lib/api';
-// Removed: import { useApiConfig } from '@/hooks/use-api-key'; // API details will be passed as props
 
 type CreateInstanceFormValues = z.infer<typeof createInstanceFormSchema>;
 
@@ -36,6 +35,41 @@ interface CreateInstanceDialogProps {
   apiToken: string | null;
   apiName: string | null;
 }
+
+// Helper function to parse tunnel_addr from URL
+// scheme://<tunnel_addr>/...
+function parseTunnelAddr(urlString: string): string | null {
+  try {
+    // Try standard URL parsing first, works for http/https etc.
+    // For custom schemes like server://, it might fail.
+    const url = new URL(urlString); 
+    return url.host; // host includes hostname and port
+  } catch (e) {
+    // Fallback for custom schemes
+    const schemeSeparator = "://";
+    const schemeIndex = urlString.indexOf(schemeSeparator);
+    if (schemeIndex === -1) return null;
+
+    // Get the string part after "scheme://"
+    const restOfString = urlString.substring(schemeIndex + schemeSeparator.length);
+    
+    // Find the first '/' or '?' to delimit the tunnel_addr
+    const pathSeparatorIndex = restOfString.indexOf('/');
+    const querySeparatorIndex = restOfString.indexOf('?');
+    let endOfTunnelAddr = -1;
+
+    if (pathSeparatorIndex !== -1 && querySeparatorIndex !== -1) {
+      endOfTunnelAddr = Math.min(pathSeparatorIndex, querySeparatorIndex);
+    } else if (pathSeparatorIndex !== -1) {
+      endOfTunnelAddr = pathSeparatorIndex;
+    } else if (querySeparatorIndex !== -1) {
+      endOfTunnelAddr = querySeparatorIndex;
+    }
+    
+    return endOfTunnelAddr !== -1 ? restOfString.substring(0, endOfTunnelAddr) : restOfString;
+  }
+}
+
 
 export function CreateInstanceDialog({ open, onOpenChange, apiId, apiRoot, apiToken, apiName }: CreateInstanceDialogProps) {
   const { toast } = useToast();
@@ -54,7 +88,10 @@ export function CreateInstanceDialog({ open, onOpenChange, apiId, apiRoot, apiTo
     },
   });
 
-  React.useEffect(() => {
+  const instanceType = form.watch("instanceType");
+  const tlsMode = form.watch("tlsMode");
+
+  useEffect(() => {
     if (open) {
       form.reset({
         instanceType: 'server',
@@ -68,9 +105,27 @@ export function CreateInstanceDialog({ open, onOpenChange, apiId, apiRoot, apiTo
     }
   }, [open, form]);
 
+  const { data: serverInstances, isLoading: isLoadingServerInstances } = useQuery<Instance[], Error, {id: string, display: string, tunnelAddr: string}[]>({
+    queryKey: ['instances', apiId, 'serversForTunnelSelection'],
+    queryFn: async () => {
+      if (!apiId || !apiRoot || !apiToken) throw new Error("API configuration is incomplete for fetching server instances.");
+      const instances = await nodePassApi.getInstances(apiRoot, apiToken);
+      return instances.filter(inst => inst.type === 'server');
+    },
+    select: (data) => data
+        .map(server => {
+            const tunnelAddr = parseTunnelAddr(server.url);
+            if (!tunnelAddr) return null;
+            return {
+                id: server.id,
+                display: `服务器 ID: ${server.id.substring(0,8)}... (${tunnelAddr})`,
+                tunnelAddr: tunnelAddr
+            };
+        })
+        .filter(Boolean) as {id: string, display: string, tunnelAddr: string}[],
+    enabled: !!(open && instanceType === 'client' && apiId && apiRoot && apiToken),
+  });
 
-  const instanceType = form.watch("instanceType");
-  const tlsMode = form.watch("tlsMode");
 
   const createInstanceMutation = useMutation({
     mutationFn: (data: CreateInstanceRequest) => {
@@ -83,7 +138,7 @@ export function CreateInstanceDialog({ open, onOpenChange, apiId, apiRoot, apiTo
         title: '实例已创建',
         description: '新实例已成功创建。',
       });
-      queryClient.invalidateQueries({ queryKey: ['instances', apiId] }); // Use passed apiId
+      queryClient.invalidateQueries({ queryKey: ['instances', apiId] }); 
       form.reset();
       onOpenChange(false);
     },
@@ -181,6 +236,45 @@ export function CreateInstanceDialog({ open, onOpenChange, apiId, apiRoot, apiTo
                 </FormItem>
               )}
             />
+
+            {instanceType === 'client' && (
+              <FormItem>
+                <FormLabel>或从现有服务器选择隧道</FormLabel>
+                <Select 
+                  onValueChange={(value) => {
+                    if (value) {
+                      form.setValue('tunnelAddress', value, { shouldValidate: true, shouldDirty: true });
+                    }
+                  }}
+                  disabled={isLoadingServerInstances || !serverInstances || serverInstances.length === 0}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder={
+                        isLoadingServerInstances ? "加载服务器列表中..." : 
+                        (!serverInstances || serverInstances.length === 0) ? "无可用服务器实例" : "选择一个服务器隧道"
+                      } />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {isLoadingServerInstances && (
+                        <div className="flex items-center justify-center p-2">
+                            <Loader2 className="h-4 w-4 animate-spin mr-2"/> 加载中...
+                        </div>
+                    )}
+                    {serverInstances && serverInstances.map(server => (
+                      <SelectItem key={server.id} value={server.tunnelAddr}>
+                        {server.display}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {serverInstances && serverInstances.length === 0 && !isLoadingServerInstances && (
+                    <FormDescription>当前 API 配置下没有可用的服务器实例。</FormDescription>
+                )}
+              </FormItem>
+            )}
+
 
             <FormField
               control={form.control}
@@ -310,3 +404,5 @@ export function CreateInstanceDialog({ open, onOpenChange, apiId, apiRoot, apiTo
     </Dialog>
   );
 }
+
+    
