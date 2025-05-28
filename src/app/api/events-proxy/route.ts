@@ -22,9 +22,9 @@ export async function GET(request: NextRequest) {
      });
   }
 
-  let response;
+  let upstreamResponse;
   try {
-    console.log(`代理: 尝试连接目标事件流。URL: ${targetUrl}, Token: Present (masked)`);
+    console.log(`Proxy: Attempting to connect to target event stream. URL: ${targetUrl}, Token: Present (masked)`);
 
     const headers: HeadersInit = {
       'Accept': 'text/event-stream',
@@ -32,61 +32,68 @@ export async function GET(request: NextRequest) {
       'X-API-Key': token,
     };
 
-    response = await fetch(targetUrl, {
+    upstreamResponse = await fetch(targetUrl, {
       method: 'GET',
       headers: headers,
       cache: 'no-store',
     });
 
-    if (!response.ok) {
-      let errorResponseMessage = `上游目标错误: ${response.status} ${response.statusText}`;
+    if (!upstreamResponse.ok) {
+      let errorResponseMessage = `上游目标错误: ${upstreamResponse.status} ${upstreamResponse.statusText}`;
       try {
-        const bodyText = await response.text();
+        const bodyText = await upstreamResponse.text();
+        // Only use bodyText if it's relatively small, not binary-looking, and seems like a real message
         if (bodyText && bodyText.trim().length > 0 && bodyText.length < 512 && !bodyText.includes('\uFFFD')) {
             errorResponseMessage = bodyText; 
         }
       } catch (e) {
-        console.warn(`代理: 尝试读取目标错误响应体失败 (状态: ${response.status}). 上游状态: ${response.statusText}. 读取错误: ${e instanceof Error ? e.message : String(e)}`);
+        console.warn(`Proxy: Failed to read upstream error response body (Status: ${upstreamResponse.status}). Upstream status: ${upstreamResponse.statusText}. Read error: ${e instanceof Error ? e.message : String(e)}`);
       }
-      console.error(`代理: 目标事件流错误。状态: ${response.status}, URL: ${targetUrl}, 响应消息: "${errorResponseMessage}"`);
-      return new Response(`代理错误: 目标服务器响应 ${response.status}。消息: ${errorResponseMessage}`, { 
-        status: response.status, 
+      console.error(`Proxy: Error from target event stream. Status: ${upstreamResponse.status}, URL: ${targetUrl}, Response Message: "${errorResponseMessage}"`);
+      return new Response(`代理错误: 目标服务器响应 ${upstreamResponse.status}。消息: ${errorResponseMessage}`, { 
+        status: upstreamResponse.status, 
         headers: { 'Content-Type': 'text/plain; charset=utf-8' } 
       });
     }
 
-    if (!response.body) {
-      console.error(`代理: 目标服务器未返回可读流。URL: ${targetUrl}`);
+    if (!upstreamResponse.body) {
+      console.error(`Proxy: Upstream server did not return a readable stream. URL: ${targetUrl}`);
       return new Response('代理错误: 目标服务器未返回可读流。', { 
         status: 500,
         headers: { 'Content-Type': 'text/plain; charset=utf-8' } 
       });
     }
     
+    // Create a new ReadableStream to pipe the data through
     const readableStream = new ReadableStream({
       async start(controller) {
-        const reader = response!.body!.getReader(); // response is guaranteed to be defined here
-        const decoder = new TextDecoder();
+        const reader = upstreamResponse!.body!.getReader(); // upstreamResponse is guaranteed to be defined here
+        const decoder = new TextDecoder(); // For decoding Uint8Array to string
 
         function push() {
           reader.read().then(({ done, value }) => {
             if (done) {
-              console.log('代理: 上游目标流已关闭。URL:', targetUrl);
+              console.log('Proxy: Upstream target stream closed. URL:', targetUrl);
               controller.close();
               return;
             }
+            // Assuming value is Uint8Array, decode it to string
             const chunk = decoder.decode(value, { stream: true });
+            // Re-encode to Uint8Array for the controller
             controller.enqueue(new TextEncoder().encode(chunk));
             push();
           }).catch(error => {
-            console.error('代理: 从目标流读取错误。URL:', targetUrl, '错误:', error);
+            console.error('Proxy: Error reading from target stream. URL:', targetUrl, 'Error:', error);
             controller.error(error);
           });
         }
         push();
       },
       cancel(reason) {
-        console.log('代理: 客户端取消了流读取。URL:', targetUrl, '原因:', reason);
+        console.log('Proxy: Client cancelled stream read. URL:', targetUrl, 'Reason:', reason);
+        // If the client cancels, we might want to signal the upstream fetch to abort if possible,
+        // but fetch doesn't directly support aborting an already started response body stream this way.
+        // The connection will eventually close.
       }
     });
 
@@ -101,11 +108,11 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     // This catch block handles errors from the `fetch` call itself (e.g., network issues)
     // or any other unexpected errors before the stream starts.
-    console.error(`代理: 事件代理处理器发生错误。目标 URL: ${targetUrl}. 错误详情:`, error);
+    console.error(`Proxy: Error in event proxy handler. Target URL: ${targetUrl}. Error details:`, error);
     const errorMessage = error instanceof Error ? error.message : '未知服务器错误';
     
-    // If response is undefined here, it means the fetch to targetUrl itself failed.
-    if (!response) {
+    // If upstreamResponse is undefined here, it means the fetch to targetUrl itself failed.
+    if (!upstreamResponse) {
       return new Response(`代理错误: 无法连接到上游目标服务器 (${targetUrl})。错误: ${errorMessage}`, { 
         status: 502, // Bad Gateway
         headers: { 'Content-Type': 'text/plain; charset=utf-8' }  
