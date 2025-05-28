@@ -13,7 +13,7 @@ import { InstanceStatusBadge } from './InstanceStatusBadge';
 interface EventLogProps {
   apiId: string | null;
   apiRoot: string | null;
-  apiToken: string | null; // Though not used by direct EventSource for auth
+  apiToken: string | null; // Token is not directly used by EventSource for auth in direct mode
   apiName: string | null;
 }
 
@@ -25,9 +25,9 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
 
   useEffect(() => {
     let currentEventSource: EventSource | null = null;
-    setEvents([]); 
+    setEvents([]);
 
-    if (!apiRoot || !apiId) { // apiId check is important for re-initialization
+    if (!apiRoot || !apiId) {
       const reason = !apiId ? "API 连接未激活或ID无效" : "活动 API 配置的 URL 无效";
       setEvents([{ type: 'log', data: `${reason}。事件流已禁用。`, timestamp: new Date().toISOString() }]);
       if (eventSourceRef.current) {
@@ -36,10 +36,8 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       }
       return;
     }
-    
-    // Construct the direct SSE URL using the active API's root.
-    // Token is not sent with direct EventSource
-    const directEventsUrl = getEventsUrl(apiRoot);
+
+    const directEventsUrl = getEventsUrl(apiRoot); // This now returns the direct /v1/events URL
     const initialMessage = `正在直接初始化事件流到 ${directEventsUrl}... (注意：EventSource 无法发送 X-API-Key 进行认证，如果服务器需要，可能会失败)`;
     
     setEvents([{ type: 'log', data: initialMessage, timestamp: new Date().toISOString() }]);
@@ -56,7 +54,8 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       if (currentEventSource !== newEventSource) return; // Stale event source
       const connectionMessage = `事件流已直接连接。等待事件... (目标: ${directEventsUrl})`;
       setEvents((prevEvents) => {
-        const filtered = prevEvents.filter(e => e.data !== initialMessage && e.data !== connectionMessage);
+         // Clear previous status messages like "initializing" or "error connecting"
+        const filtered = prevEvents.filter(e => e.data !== initialMessage && !e.data.startsWith("EventSource"));
         return [{ type: 'log', data: connectionMessage, timestamp: new Date().toISOString() }, ...filtered.slice(0, 99)];
       });
     };
@@ -97,7 +96,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
           default:
             console.warn("未知服务器事件类型:", serverEventPayload.type, serverEventPayload);
             frontendEventType = 'log'; 
-            instanceDetailsPayload = serverEventPayload.instance;
+            instanceDetailsPayload = serverEventPayload.instance; // Still pass instance if available
             frontendEventData = `未知事件 ${serverEventPayload.type}: ${JSON.stringify(serverEventPayload.data || serverEventPayload.instance || serverEventPayload)}`;
             break;
         }
@@ -116,7 +115,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       }
     });
     
-    newEventSource.onmessage = (event) => {
+    newEventSource.onmessage = (event) => { // Fallback for unnamed events
         if (currentEventSource !== newEventSource) return;
         console.log("收到通用 SSE 消息 (非 'instance' 事件):", event.data);
         const genericEvent: InstanceEvent = {
@@ -129,24 +128,30 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
 
     newEventSource.onerror = (event: Event) => { 
       if (currentEventSource !== newEventSource) return; 
+
+      const rs = newEventSource.readyState;
+      let uiErrorMessage: string;
+
+      if (rs === EventSource.CONNECTING) { // Value is 0
+        uiErrorMessage = `EventSource 尝试连接时出错。请检查网络、服务器 (${directEventsUrl}) 日志，并确认认证方式 (如是否需要 X-API-Key)。`;
+      } else if (rs === EventSource.CLOSED) { // Value is 2
+        uiErrorMessage = `EventSource 连接已关闭。对于直接连接, 这通常是因为服务器需要 X-API-Key 认证头 (EventSource无法发送) 或其他服务器端问题。请检查服务器 (${directEventsUrl}) 日志。`;
+      } else { // Should not typically happen for onerror if it's not CONNECTING or CLOSED, but as a fallback
+        uiErrorMessage = `EventSource 遇到未知连接错误 (状态: ${rs})。请检查服务器 (${directEventsUrl}) 日志。`;
+      }
+      
       console.error(
-        `EventSource 错误 (客户端). ReadyState: ${newEventSource.readyState}. ` +
+        `EventSource 错误 (客户端). ReadyState: ${rs}. ` +
         `直接连接到: ${directEventsUrl}. ` +
         `客户端事件对象 (如下所示) 通常缺乏详细信息。` +
         `如果这是认证错误，请注意 EventSource 无法发送 X-API-Key 头。` +
         `请检查 NodePass API 服务器 (${directEventsUrl}) 的日志以了解根本原因。`,
         event 
       );
-      let errorMessage = `EventSource 连接错误。请检查网络和服务器日志。 (目标: ${directEventsUrl})`;
-      if (newEventSource.readyState === EventSource.CLOSED) {
-        errorMessage = `EventSource 连接已关闭。对于直接连接, 这通常是因为服务器需要 X-API-Key 认证头, 而 EventSource 无法发送。请检查服务器日志。 (目标: ${directEventsUrl})`;
-      } else if (newEventSource.readyState === EventSource.CONNECTING) {
-        return; 
-      }
-
-      const errorEventLog: InstanceEvent = { type: 'log', data: errorMessage, timestamp: new Date().toISOString() };
+      
+      const errorEventLog: InstanceEvent = { type: 'log', data: uiErrorMessage, timestamp: new Date().toISOString() };
       setEvents((prevEvents) => {
-        if (prevEvents.length > 0 && prevEvents[0].data === errorMessage && prevEvents[0].type === 'log') {
+        if (prevEvents.length > 0 && prevEvents[0].data === uiErrorMessage && prevEvents[0].type === 'log') {
           return prevEvents;
         }
         return [errorEventLog, ...prevEvents.slice(0, 99)];
@@ -159,12 +164,10 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       }
       eventSourceRef.current = null;
     };
-  // Ensure EventSource reinitializes if apiId or apiRoot changes.
-  // apiToken is not directly used by EventSource for auth here, but good to include if apiRoot might depend on it.
-  }, [apiId, apiRoot, apiToken, apiName]); 
+  }, [apiId, apiRoot, apiName]); // apiToken is not used for direct EventSource auth
 
 
-  const getBadgeTextAndVariant = (type: InstanceEvent['type']): { text: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' } => {
+  const getBadgeTextAndVariant = (type: InstanceEvent['type']): { text: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' | 'accent' } => {
     if (type.includes('created')) return { text: '已创建', variant: 'default' };
     if (type.includes('updated')) return { text: '已更新', variant: 'secondary' };
     if (type.includes('deleted')) return { text: '已删除', variant: 'destructive' };
@@ -174,7 +177,6 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
   const isExpandable = (event: InstanceEvent): boolean => {
     if (event.instanceDetails) return true;
     if (event.type === 'log' && typeof event.data === 'string' && event.data.length > 100) return true;
-    // For non-log events that might have object data but no instanceDetails (fallback case)
     if (event.type !== 'log' && typeof event.data === 'object' && event.data !== null && !event.instanceDetails) return true;
     return false;
   };
@@ -225,17 +227,14 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
                     {event.type !== 'log' && instance ? (
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 leading-tight">
                         <span className="font-mono text-foreground/90">ID: {instance.id.substring(0, 8)}</span>
-                        <span className="text-muted-foreground">|</span>
-                         <Badge
+                        <Badge
                           variant={instance.type === 'server' ? 'default' : 'accent'}
                           className="px-1.5 py-0.5 text-xs whitespace-nowrap items-center"
                         >
                           {instance.type === 'server' ? <Server size={12} className="mr-1" /> : <Smartphone size={12} className="mr-1" />}
                           {instance.type === 'server' ? '服务器' : '客户端'}
                         </Badge>
-                        <span className="text-muted-foreground">|</span>
                         <InstanceStatusBadge status={instance.status} />
-                        <span className="text-muted-foreground">|</span>
                         <span className="font-mono truncate text-foreground/70" title={instance.url}>URL: {instance.url.length > 30 ? instance.url.substring(0, 27) + '...' : instance.url}</span>
                       </div>
                     ) : (
@@ -275,3 +274,5 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
     </Card>
   );
 }
+
+    
