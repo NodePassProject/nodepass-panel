@@ -171,7 +171,6 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
                     <Input 
                       placeholder={instanceType === "server" ? "服务器监听的控制通道地址, 例如: 0.0.0.0:10101" : "要连接的 NodePass 服务器隧道地址, 例如: your.server.com:10101"} 
                       {...field}
-                      className="text-sm" 
                     />
                   </FormControl>
                   <FormDescription>
@@ -194,7 +193,6 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
                     <Input 
                       placeholder={instanceType === "server" ? "服务器监听的流量转发地址, 例如: 0.0.0.0:8080" : "本地流量转发地址, 例如: 127.0.0.1:8000"} 
                       {...field} 
-                      className="text-sm"
                     />
                   </FormControl>
                    <FormDescription>
@@ -268,7 +266,6 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
                             <Input 
                               placeholder="例如: /path/to/your/cert.pem" 
                               {...field} 
-                              className="text-sm"
                             />
                           </FormControl>
                           <FormMessage />
@@ -285,7 +282,6 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
                             <Input 
                               placeholder="例如: /path/to/your/key.pem" 
                               {...field} 
-                              className="text-sm"
                             />
                           </FormControl>
                           <FormMessage />
