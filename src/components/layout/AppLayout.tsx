@@ -64,7 +64,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         currentConfig={editingApiConfig}
         isEditing={!!editingApiConfig}
       />
-      <footer className="py-6 text-center text-sm text-muted-foreground border-t">
+      <footer className="py-6 text-center text-sm text-muted-foreground border-t border-border bg-muted/30">
         NodePass 管理器 &copy; {new Date().getFullYear()}
       </footer>
     </div>
