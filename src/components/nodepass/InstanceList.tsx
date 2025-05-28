@@ -180,7 +180,7 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
                   <TableRow key={instance.id}>
                     <TableCell className="font-medium truncate max-w-xs">{instance.id}</TableCell>
                     <TableCell>
-                      <Badge variant={instance.type === 'server' ? 'outline' : 'secondary'} className="capitalize items-center whitespace-nowrap">
+                      <Badge variant={instance.type === 'server' ? 'default' : 'secondary'} className="items-center whitespace-nowrap">
                         {instance.type === 'server' ? <Server className="h-3 w-3 mr-1" /> : <Smartphone className="h-3 w-3 mr-1" />}
                         {instance.type === 'server' ? '服务器' : '客户端'}
                       </Badge>
@@ -225,13 +225,13 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
               ) : (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center h-24">
-                    {searchTerm && (!filteredInstances || filteredInstances.length === 0)
-                      ? "未找到与您搜索匹配的实例。"
-                      : !apiId && !isLoadingInstances // Check !isLoadingInstances here
+                    {isLoadingInstances 
+                      ? "加载实例中..." 
+                      : !apiId 
                         ? "请先选择一个活动的 API 连接。"
-                        : isLoadingInstances // If still loading, show loading message
-                          ? "加载实例中..."
-                          : "无可用实例。" // Default if not loading and no other condition met
+                        : searchTerm && (!filteredInstances || filteredInstances.length === 0)
+                          ? "未找到与您搜索匹配的实例。"
+                          : "无可用实例。"
                     }
                   </TableCell>
                 </TableRow>
@@ -265,10 +265,10 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
         onOpenChange={(open) => {
           if (!open) setSelectedInstanceForModify(null);
         }}
-        apiRoot={apiRoot}
-        apiToken={apiToken}
         apiId={apiId}
         apiName={apiName}
+        apiRoot={apiRoot}
+        apiToken={apiToken}
       />
     </Card>
   );

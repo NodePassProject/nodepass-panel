@@ -7,7 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Rss, ChevronRight, ChevronDown } from 'lucide-react';
 import type { Instance, InstanceEvent } from '@/types/nodepass';
-import { getEventsUrl } from '@/lib/api';
+// import { getEventsUrl } from '@/lib/api'; // No longer used for direct EventSource
 import { InstanceStatusBadge } from './InstanceStatusBadge';
 
 interface EventLogProps {
@@ -25,7 +25,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
 
   useEffect(() => {
     let currentEventSource: EventSource | null = null;
-    setEvents([]); // Clear previous events on API change
+    setEvents([]); 
 
     if (!apiId || !apiRoot || !apiToken) {
       const reason = !apiId ? "API 连接未激活" : "活动 API 配置的 URL 或令牌无效";
@@ -37,8 +37,8 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       return;
     }
     
-    const directEventsUrl = getEventsUrl(apiRoot, apiToken); // Pass token for direct connection, assuming server supports it
-    const initialMessage = `正在直接初始化事件流到 ${apiRoot}/v1/events... (如果服务器需要 X-API-Key 认证且不支持token参数，可能失败)`;
+    const proxyEventsUrl = `/api/events-proxy?targetUrl=${encodeURIComponent(apiRoot + '/v1/events')}&token=${encodeURIComponent(apiToken)}`;
+    const initialMessage = `正在通过代理初始化事件流到 ${apiRoot}/v1/events...`;
     
     setEvents([{ type: 'log', data: initialMessage, timestamp: new Date().toISOString() }]);
     
@@ -46,25 +46,14 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       eventSourceRef.current.close();
     }
 
-    // For direct EventSource connection, try to pass token if server supports it via query param
-    // This is a common workaround, but server MUST support it.
-    const urlWithToken = apiToken ? `${directEventsUrl}?token=${encodeURIComponent(apiToken)}` : directEventsUrl;
-    
-    // If you are absolutely sure your server does NOT support token in query AND strictly requires X-API-Key,
-    // then direct EventSource will fail authentication. You would then need a proxy.
-    // For now, we attempt direct connection, assuming server might support query token or be open.
-    // If it's open, then the token prop to getEventsUrl might not be used if getEventsUrl doesn't append it.
-    // Let's ensure getEventsUrl itself is simple and doesn't try to append token by default.
-
-    const newEventSource = new EventSource(directEventsUrl); // Using directEventsUrl from getEventsUrl
+    const newEventSource = new EventSource(proxyEventsUrl);
     eventSourceRef.current = newEventSource;
     currentEventSource = newEventSource;
 
     newEventSource.onopen = () => {
       if (currentEventSource !== newEventSource) return; 
-      const connectionMessage = `事件流已直接连接。等待事件... (目标: ${directEventsUrl})`;
+      const connectionMessage = `事件流已通过代理连接。等待事件... (目标: ${apiRoot}/v1/events)`;
       setEvents((prevEvents) => {
-         // Add new message, remove initial message, keep others, limit to 100
         const filtered = prevEvents.filter(e => e.data !== initialMessage && e.data !== connectionMessage);
         return [{ type: 'log', data: connectionMessage, timestamp: new Date().toISOString() }, ...filtered.slice(0, 99)];
       });
@@ -72,7 +61,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
 
     newEventSource.addEventListener('instance', (event) => {
       if (currentEventSource !== newEventSource) return; 
-      console.log('SSE "instance" event received from server (direct):', event.data);
+      console.log('SSE "instance" event received from server (via proxy):', event.data);
       try {
         const serverEventPayload = JSON.parse(event.data as string);
         let frontendEventType: InstanceEvent['type'];
@@ -82,29 +71,29 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
         switch (serverEventPayload.type) {
           case 'initial':
             frontendEventType = 'instance_created';
-            frontendEventData = serverEventPayload.instance || {};
             instanceDetailsPayload = serverEventPayload.instance;
+            frontendEventData = instanceDetailsPayload || {}; // For summary, use instance
             break;
           case 'update':
             frontendEventType = 'instance_updated';
-            frontendEventData = serverEventPayload.instance || {};
             instanceDetailsPayload = serverEventPayload.instance;
+            frontendEventData = instanceDetailsPayload || {};
             break;
           case 'delete':
             frontendEventType = 'instance_deleted';
-            frontendEventData = serverEventPayload.instance || {};
             instanceDetailsPayload = serverEventPayload.instance;
+            frontendEventData = instanceDetailsPayload || {};
             break;
           case 'log':
             frontendEventType = 'log';
-            instanceDetailsPayload = serverEventPayload.instance; // Log events can also have instance context
+            instanceDetailsPayload = serverEventPayload.instance;
             frontendEventData = serverEventPayload.logs || `[实例ID: ${serverEventPayload.instance?.id?.substring(0,8) || 'N/A'}] 未知日志内容`;
             if (serverEventPayload.instance && serverEventPayload.logs) {
                  frontendEventData = `[${serverEventPayload.instance.id.substring(0,8)}] ${serverEventPayload.logs}`;
             }
             break;
           default:
-            console.warn("未知服务器事件类型 (direct):", serverEventPayload.type, serverEventPayload);
+            console.warn("未知服务器事件类型 (via proxy):", serverEventPayload.type, serverEventPayload);
             frontendEventType = 'log'; 
             frontendEventData = `未知事件 ${serverEventPayload.type}: ${JSON.stringify(serverEventPayload.data || serverEventPayload.instance || serverEventPayload)}`;
             instanceDetailsPayload = serverEventPayload.instance;
@@ -119,7 +108,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
         };
         setEvents((prevEvents) => [newEventToLog, ...prevEvents.slice(0, 99)]);
       } catch (error) {
-        console.error("无法解析事件数据 (direct):", error, "原始数据:", event.data);
+        console.error("无法解析事件数据 (via proxy):", error, "原始数据:", event.data);
         const errorEventToLog: InstanceEvent = { type: 'log', data: `解析事件错误: ${event.data}`, timestamp: new Date().toISOString() };
         setEvents((prevEvents) => [errorEventToLog, ...prevEvents.slice(0, 99)]);
       }
@@ -127,7 +116,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
     
     newEventSource.onmessage = (event) => {
         if (currentEventSource !== newEventSource) return;
-        console.log("收到通用 SSE 消息 (非 'instance' 事件, direct):", event.data);
+        console.log("收到通用 SSE 消息 (非 'instance' 事件, via proxy):", event.data);
         const genericEvent: InstanceEvent = {
           type: 'log',
           data: `通用消息: ${event.data}`,
@@ -140,23 +129,21 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       if (currentEventSource !== newEventSource) return; 
       console.error(
         `EventSource 错误 (客户端). ReadyState: ${newEventSource.readyState}. ` +
-        `直接连接到: ${directEventsUrl}. ` +
+        `通过代理连接到: ${proxyEventsUrl}. ` +
+        `上游目标: ${apiRoot}/v1/events. ` +
         `客户端事件对象 (如下所示) 通常缺乏详细信息。` +
-        `如果这是认证错误，请注意 EventSource 无法发送 X-API-Key 头。` +
-        `请检查 NodePass API 服务器 (${directEventsUrl}) 的日志以了解根本原因。`,
+        `请检查 NodePass API 服务器 (${apiRoot}/v1/events) 和 Next.js 代理 (/api/events-proxy) 的日志以了解根本原因。`,
         event 
       );
       let errorMessage = 'EventSource 连接错误。';
       if (newEventSource.readyState === EventSource.CLOSED) {
-        errorMessage = 'EventSource 连接已关闭。可能由于服务器端认证失败或网络问题。';
+        errorMessage = 'EventSource 连接已关闭。可能由于代理或服务器端问题。';
       } else if (newEventSource.readyState === EventSource.CONNECTING) {
-        // Don't spam logs if it's just trying to connect and hasn't failed definitively yet
         return; 
       }
 
       const errorEventLog: InstanceEvent = { type: 'log', data: errorMessage, timestamp: new Date().toISOString() };
       setEvents((prevEvents) => {
-        // Avoid duplicate consecutive error messages
         if (prevEvents.length > 0 && prevEvents[0].data === errorMessage && prevEvents[0].type === 'log') {
           return prevEvents;
         }
@@ -170,20 +157,19 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       }
       eventSourceRef.current = null;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiId, apiRoot, apiToken, apiName]); // Removed getApiRootUrl and getToken from deps as they are stable
+  }, [apiId, apiRoot, apiToken, apiName]); 
 
 
   const getBadgeTextAndVariant = (type: InstanceEvent['type']): { text: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' } => {
-    if (type.includes('created')) return { text: '已创建', variant: 'default' }; // Primary/Default for creation
-    if (type.includes('updated')) return { text: '已更新', variant: 'secondary' }; // Secondary for updates
-    if (type.includes('deleted')) return { text: '已删除', variant: 'destructive' }; // Destructive for deletion
-    return { text: '日志', variant: 'outline' }; // Outline for general logs
+    if (type.includes('created')) return { text: '已创建', variant: 'default' };
+    if (type.includes('updated')) return { text: '已更新', variant: 'secondary' };
+    if (type.includes('deleted')) return { text: '已删除', variant: 'destructive' };
+    return { text: '日志', variant: 'outline' };
   }
   
   const isExpandable = (event: InstanceEvent): boolean => {
     if (event.instanceDetails) return true;
-    if (event.type === 'log' && typeof event.data === 'string' && event.data.length > 100) return true; // Expand if log message is long
+    if (event.type === 'log' && typeof event.data === 'string' && event.data.length > 100) return true;
     return false;
   };
 
@@ -195,7 +181,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
           实时事件日志
         </CardTitle>
         <CardDescription>
-          来自 NodePass 实例的实时更新 (API: {apiName || 'N/A'}，直接连接)。
+          来自 NodePass 实例的实时更新 (API: {apiName || 'N/A'}，通过代理连接)。
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -221,12 +207,12 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
                   }}
                   style={canExpand ? { cursor: 'pointer' } : {}}
                 >
-                  <div className="flex items-center shrink-0 w-6 h-[1.125rem]"> {/* Height matches badge approx */}
+                  <div className="flex items-center shrink-0 w-6 h-[1.125rem]">
                     {canExpand && (
                       isExpanded ? <ChevronDown className="h-4 w-4 " /> : <ChevronRight className="h-4 w-4 " />
                     )}
                   </div>
-                  <Badge variant={badgeVariant} className="capitalize py-0.5 px-1.5 shadow-sm whitespace-nowrap">
+                  <Badge variant={badgeVariant} className="py-0.5 px-1.5 shadow-sm whitespace-nowrap">
                     {badgeText}
                   </Badge>
                   <div className="flex-grow min-w-0">
@@ -234,7 +220,12 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 leading-tight">
                         <span className="font-mono text-foreground/90">ID: {instance.id.substring(0, 8)}</span>
                         <span className="text-muted-foreground">|</span>
-                        <span className="capitalize">{instance.type}</span>
+                        <Badge
+                          variant={instance.type === 'server' ? 'default' : 'secondary'}
+                          className="px-1.5 py-0.5 text-xs"
+                        >
+                          {instance.type === 'server' ? '服务器' : '客户端'}
+                        </Badge>
                         <span className="text-muted-foreground">|</span>
                         <InstanceStatusBadge status={instance.status} />
                         <span className="text-muted-foreground">|</span>
@@ -273,4 +264,3 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
     </Card>
   );
 }
-    
