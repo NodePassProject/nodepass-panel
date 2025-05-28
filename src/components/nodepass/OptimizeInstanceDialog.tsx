@@ -67,7 +67,7 @@ export function OptimizeInstanceDialog({ instance, open, onOpenChange }: Optimiz
     } catch (error: any) {
       toast({
         title: '获取建议出错',
-        description: error.message || '发生未知错误。',
+        description: error.message || '未知错误。',
         variant: 'destructive',
       });
     } finally {
@@ -78,7 +78,7 @@ export function OptimizeInstanceDialog({ instance, open, onOpenChange }: Optimiz
   const handleCopyToClipboard = () => {
     if (suggestedConfig) {
       navigator.clipboard.writeText(suggestedConfig);
-      toast({ title: "已复制到剪贴板！" });
+      toast({ title: "已复制！" });
     }
   };
 
@@ -90,10 +90,10 @@ export function OptimizeInstanceDialog({ instance, open, onOpenChange }: Optimiz
         <DialogHeader>
           <DialogTitle className="flex items-center">
             <Wand2 className="mr-2 h-5 w-5 text-primary" />
-            AI 驱动的优化
+            AI 优化建议
           </DialogTitle>
           <DialogDescription>
-            获取针对实例 <span className="font-semibold">{instance.id}</span> 的 AI 建议优化 URL 配置。
+            获取实例 <span className="font-semibold">{instance.id}</span> 的 AI 优化 URL 配置建议。
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -124,10 +124,10 @@ export function OptimizeInstanceDialog({ instance, open, onOpenChange }: Optimiz
               name="performanceCharacteristics"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>期望性能特征</FormLabel>
+                  <FormLabel>性能特征</FormLabel>
                   <FormControl>
                     <Textarea
-                      placeholder="例如：低延迟、高吞吐量、游戏稳定连接"
+                      placeholder="例：低延迟、高吞吐、游戏稳定连接"
                       {...field}
                     />
                   </FormControl>
@@ -156,7 +156,7 @@ export function OptimizeInstanceDialog({ instance, open, onOpenChange }: Optimiz
                 size="icon"
                 onClick={handleCopyToClipboard}
                 className="absolute top-2 right-2 h-7 w-7"
-                aria-label="复制到剪贴板"
+                aria-label="复制"
               >
                 <Copy className="h-4 w-4" />
               </Button>

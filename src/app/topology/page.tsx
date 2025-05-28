@@ -12,6 +12,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { AppLayout } from '@/components/layout/AppLayout';
+import { Badge } from '@/components/ui/badge';
+import { InstanceStatusBadge } from '@/components/nodepass/InstanceStatusBadge';
 
 interface InstanceWithApiDetails extends Instance {
   apiId: string;
@@ -151,7 +153,7 @@ export default function TopologyPage() {
     }
     if (apiConfigsList.length === 0) {
         setIsLoadingData(false);
-        setFetchErrors(prev => new Map(prev).set("global", "没有配置任何 API 连接。请先添加一个。"));
+        setFetchErrors(prev => new Map(prev).set("global", "无 API 连接，请先添加。"));
         setProcessedServers([]);
         return;
     }
@@ -168,7 +170,7 @@ export default function TopologyPage() {
 
       if (!apiRoot || !token) {
         console.warn(`Topology: API config "${config.name}" (ID: ${config.id}) is invalid or incomplete. Skipping.`);
-        currentErrors.set(config.id, `API 配置 "${config.name}" 无效或不完整。`);
+        currentErrors.set(config.id, `API 配置 “${config.name}” 无效。`);
         continue;
       }
 
@@ -178,7 +180,7 @@ export default function TopologyPage() {
         combinedInstances.push(...data.map(inst => ({ ...inst, apiId: config.id, apiName: config.name })));
       } catch (err: any) {
         console.error(`Topology: Error loading instances from API "${config.name}" (ID: ${config.id}):`, err);
-        currentErrors.set(config.id, `从 "${config.name}" 加载实例失败: ${err.message || '未知错误'}`);
+        currentErrors.set(config.id, `加载 “${config.name}” 实例失败: ${err.message || '未知错误'}`);
       }
     }
     
@@ -191,12 +193,6 @@ export default function TopologyPage() {
     fetchDataAndProcess();
   }, [fetchDataAndProcess]);
 
-  const renderInstanceStatus = (status: Instance['status']) => {
-    let color = 'text-gray-500';
-    if (status === 'running') color = 'text-green-500';
-    else if (status === 'error') color = 'text-red-500';
-    return <span className={`font-semibold ${color} capitalize`}>{status}</span>;
-  };
 
   if (isLoadingApiConfig) {
     return (
@@ -228,9 +224,9 @@ export default function TopologyPage() {
       <TooltipProvider delayDuration={300}>
         <>
           <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
-            <h1 className="text-2xl sm:text-3xl font-bold text-center sm:text-left">实例连接拓扑 (服务器中心)</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-center sm:text-left">连接拓扑 (服务器为中心)</h1>
             <div className="flex items-center gap-2">
-              {lastRefreshed && <span className="text-xs text-muted-foreground">上次刷新: {lastRefreshed.toLocaleTimeString()}</span>}
+              {lastRefreshed && <span className="text-xs text-muted-foreground">刷新于: {lastRefreshed.toLocaleTimeString()}</span>}
               <Button variant="outline" onClick={fetchDataAndProcess} disabled={isLoadingData} size="sm">
                 <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingData ? 'animate-spin' : ''}`} />
                 {isLoadingData ? '刷新中...' : '刷新'}
@@ -268,9 +264,9 @@ export default function TopologyPage() {
               <CardHeader><CardTitle>无服务器实例数据</CardTitle></CardHeader>
               <CardContent>
                 <p className="text-muted-foreground">
-                  {apiConfigsList.length > 0 ? "未找到任何服务器实例，或没有客户端连接到它们。" : "请先配置API连接。"}
+                  {apiConfigsList.length > 0 ? "无服务器实例或无客户端连接。" : "请先配置 API 连接。"}
                 </p>
-                {fetchErrors.size > 0 && <p className="text-muted-foreground mt-2">部分API配置加载失败，可能影响结果。</p>}
+                {fetchErrors.size > 0 && <p className="text-muted-foreground mt-2">部分 API 加载失败可能影响结果。</p>}
               </CardContent>
             </Card>
           )}
@@ -285,31 +281,31 @@ export default function TopologyPage() {
                       <div className="flex-grow text-left">
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <p className="font-semibold text-lg truncate group-hover:underline" title={`${server.apiName} (服务器实例 ID: ${server.id})`}>
+                            <p className="font-semibold text-lg truncate group-hover:underline" title={`来源: ${server.apiName}\nID: ${server.id}\nURL: ${server.url}`}>
                               {server.apiName} 
                             </p>
                           </TooltipTrigger>
                           <TooltipContent side="top" className="max-w-md break-all">
-                            <p>来源 API: {server.apiName}</p>
-                            <p>服务器实例 ID: {server.id}</p>
+                            <p>来源: {server.apiName}</p>
+                            <p>ID: {server.id}</p>
                             <p>URL: {server.url}</p>
                           </TooltipContent>
                         </Tooltip>
                         <p className="text-xs text-muted-foreground">
-                           服务器 ID: {server.id.substring(0,12)}... | 监听: <span className="font-mono">{server.serverListeningAddress || 'N/A'}</span> | 状态: {renderInstanceStatus(server.status)}
+                           ID: {server.id.substring(0,12)}... | 监听: <span className="font-mono">{server.serverListeningAddress || 'N/A'}</span> | 状态: <InstanceStatusBadge status={server.status} />
                         </p>
                          <p className="text-xs text-muted-foreground">
-                           目标转发: <span className="font-mono">{server.serverForwardsToAddress || 'N/A'}</span>
+                           转发至: <span className="font-mono">{server.serverForwardsToAddress || 'N/A'}</span>
                         </p>
                       </div>
                     </div>
                   </AccordionTrigger>
                   <AccordionContent className="px-4 pb-4 pt-2 border-t border-border/50">
                     {server.connectedClients.length === 0 ? (
-                      <p className="text-sm text-muted-foreground italic py-2">此服务器实例当前没有连接的客户端。</p>
+                      <p className="text-sm text-muted-foreground italic py-2">此服务器无连接客户端。</p>
                     ) : (
                       <div className="space-y-3">
-                        <h4 className="text-sm font-semibold text-muted-foreground mb-1">连接的客户端 ({server.connectedClients.length}):</h4>
+                        <h4 className="text-sm font-semibold text-muted-foreground mb-1">已连接客户端 ({server.connectedClients.length}):</h4>
                         {server.connectedClients.map((client) => (
                           <Card key={client.id} className="bg-background/50 p-3 shadow-sm border">
                             <div className="flex items-start gap-2">
@@ -319,26 +315,26 @@ export default function TopologyPage() {
                                   <TooltipTrigger asChild>
                                     <div 
                                       className="font-medium text-sm truncate" 
-                                      title={`来源 API: ${client.apiName}\n客户端 ID: ${client.id}\nURL: ${client.url}`}
+                                      title={`来源: ${client.apiName}\nID: ${client.id}\nURL: ${client.url}`}
                                     >
                                       客户端: {client.apiName} <span className="text-muted-foreground text-xs">(ID: {client.id.substring(0,8)}...)</span>
                                     </div>
                                   </TooltipTrigger>
                                   <TooltipContent side="top" className="max-w-md break-all">
-                                    <p>客户端 ID: {client.id}</p>
-                                    <p>来源 API: {client.apiName}</p>
+                                    <p>ID: {client.id}</p>
+                                    <p>来源: {client.apiName}</p>
                                     <p>URL: {client.url}</p>
                                   </TooltipContent>
                                 </Tooltip>
                                 <p className="text-xs text-muted-foreground">
-                                  连接到: <span className="font-mono">{client.clientConnectsToServerAddress || 'N/A'}</span> ({renderInstanceStatus(client.status)})
+                                  连接至: <span className="font-mono">{client.clientConnectsToServerAddress || 'N/A'}</span> (<InstanceStatusBadge status={client.status} />)
                                 </p>
                               </div>
                             </div>
                             <div className="mt-2 pl-6 border-l-2 border-dashed border-muted-foreground/30 ml-[7px]">
                               <p className="text-xs text-foreground flex items-center">
                                   <ArrowRightLeft className="h-3.5 w-3.5 mr-1.5 text-green-600 dark:text-green-400 shrink-0"/>
-                                  落地Node: <span className="font-semibold font-mono text-green-600 dark:text-green-400 ml-1">{client.localTargetAddress || 'N/A'}</span>
+                                  本地目标: <span className="font-semibold font-mono text-green-600 dark:text-green-400 ml-1">{client.localTargetAddress || 'N/A'}</span>
                               </p>
                             </div>
                           </Card>
@@ -354,10 +350,10 @@ export default function TopologyPage() {
           <div className="mt-8 p-4 bg-muted/30 rounded-lg text-xs text-muted-foreground shadow-sm">
             <div className="flex items-center font-semibold mb-2"><Info className="h-4 w-4 mr-2 text-primary shrink-0" />拓扑说明</div>
             <ul className="list-disc list-inside space-y-1.5 pl-1">
-              <li>此视图显示从所有已配置的API源聚合的服务器实例。</li>
-              <li>展开服务器实例可查看连接到该服务器的客户端实例。</li>
-              <li>连接关系基于客户端URL中的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> (客户端连接的目标服务器地址) 与服务器URL中的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> (服务器监听的控制通道地址) 的匹配。端口号必须匹配，且如果服务器的监听地址不是通配符(如 0.0.0.0 或 [::])，则主机地址也必须匹配。</li>
-              <li>客户端的 "落地Node" 是从其URL的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;target_addr&gt;</code> 解析的。</li>
+              <li>此视图聚合所有 API 源的服务器实例。</li>
+              <li>展开服务器可查看其连接的客户端。</li>
+              <li>连接匹配: 客户端 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> 与服务器 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> (端口匹配; 主机匹配或服务器通配符)。</li>
+              <li>客户端“本地目标”由其 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;target_addr&gt;</code> 解析。</li>
             </ul>
           </div>
         </>

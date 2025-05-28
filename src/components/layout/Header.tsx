@@ -39,7 +39,7 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
     setActiveApiConfigId(id);
      toast({
       title: '活动连接已切换',
-      description: `现在已连接到 “${newActiveConf?.name}”。`,
+      description: `已连接到 “${newActiveConf?.name}”。`,
     });
     router.push('/'); // Navigate to homepage after switching
   };

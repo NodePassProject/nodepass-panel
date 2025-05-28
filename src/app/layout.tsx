@@ -18,7 +18,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: 'NodePass 管理器',
-  description: '轻松管理您的 NodePass 实例。',
+  description: 'NodePass 实例管理。',
 };
 
 export default function RootLayout({

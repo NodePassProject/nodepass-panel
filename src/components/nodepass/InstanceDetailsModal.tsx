@@ -38,7 +38,8 @@ export function InstanceDetailsModal({ instance, open, onOpenChange }: InstanceD
     { 
       label: "类型", 
       value: (
-        <Badge variant={instance.type === 'server' ? 'default' : 'accent'} className="capitalize">
+        <Badge variant={instance.type === 'server' ? 'default' : 'accent'} className="capitalize whitespace-nowrap">
+          {instance.type === 'server' ? <Server className="h-3 w-3 mr-1" /> : <Smartphone className="h-3 w-3 mr-1" />}
           {instance.type === 'server' ? '服务器' : '客户端'}
         </Badge>
       ), 
@@ -58,7 +59,7 @@ export function InstanceDetailsModal({ instance, open, onOpenChange }: InstanceD
         <DialogHeader>
           <DialogTitle className="text-xl">实例详情</DialogTitle>
           <DialogDescription>
-            实例 <span className="font-semibold">{instance.id}</span> 的详细信息。
+            实例 <span className="font-semibold">{instance.id}</span> 详情。
           </DialogDescription>
         </DialogHeader>
         <div className="mt-4 space-y-4">

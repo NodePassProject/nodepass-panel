@@ -37,8 +37,7 @@ export function DeleteInstanceDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>删除实例</AlertDialogTitle>
           <AlertDialogDescription>
-            您确定要删除实例 <span className="font-semibold">{instance.id}</span> 吗？
-            此操作无法撤销。实例 URL 为 <span className="font-semibold break-all">{instance.url}</span>。
+            确定删除实例 <span className="font-semibold">{instance.id}</span>？此操作无法撤销。URL: <span className="font-semibold break-all">{instance.url}</span>。
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

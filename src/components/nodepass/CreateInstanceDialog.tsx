@@ -36,24 +36,17 @@ interface CreateInstanceDialogProps {
   apiName: string | null;
 }
 
-// Helper function to parse tunnel_addr from URL
-// scheme://<tunnel_addr>/...
 function parseTunnelAddr(urlString: string): string | null {
   try {
-    // Try standard URL parsing first, works for http/https etc.
-    // For custom schemes like server://, it might fail.
     const url = new URL(urlString); 
-    return url.host; // host includes hostname and port
+    return url.host; 
   } catch (e) {
-    // Fallback for custom schemes
     const schemeSeparator = "://";
     const schemeIndex = urlString.indexOf(schemeSeparator);
     if (schemeIndex === -1) return null;
 
-    // Get the string part after "scheme://"
     const restOfString = urlString.substring(schemeIndex + schemeSeparator.length);
     
-    // Find the first '/' or '?' to delimit the tunnel_addr
     const pathSeparatorIndex = restOfString.indexOf('/');
     const querySeparatorIndex = restOfString.indexOf('?');
     let endOfTunnelAddr = -1;
@@ -118,7 +111,7 @@ export function CreateInstanceDialog({ open, onOpenChange, apiId, apiRoot, apiTo
             if (!tunnelAddr) return null;
             return {
                 id: server.id,
-                display: `服务器 ID: ${server.id.substring(0,8)}... (${tunnelAddr})`,
+                display: `ID: ${server.id.substring(0,8)}... (${tunnelAddr})`,
                 tunnelAddr: tunnelAddr
             };
         })
@@ -136,7 +129,7 @@ export function CreateInstanceDialog({ open, onOpenChange, apiId, apiRoot, apiTo
     onSuccess: () => {
       toast({
         title: '实例已创建',
-        description: '新实例已成功创建。',
+        description: '新实例已创建。',
       });
       queryClient.invalidateQueries({ queryKey: ['instances', apiId] }); 
       form.reset();
@@ -145,7 +138,7 @@ export function CreateInstanceDialog({ open, onOpenChange, apiId, apiRoot, apiTo
     onError: (error: any) => {
       toast({
         title: '创建实例出错',
-        description: error.message || '发生未知错误。',
+        description: error.message || '未知错误。',
         variant: 'destructive',
       });
     },
@@ -178,7 +171,7 @@ export function CreateInstanceDialog({ open, onOpenChange, apiId, apiRoot, apiTo
             创建新实例
           </DialogTitle>
           <DialogDescription>
-            提供实例的详细信息以进行配置 (将在API配置: {apiName || 'N/A'} 中创建)。
+            提供实例详情进行配置 (API: {apiName || 'N/A'})。
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -205,8 +198,8 @@ export function CreateInstanceDialog({ open, onOpenChange, apiId, apiRoot, apiTo
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="server">服务器 (Server)</SelectItem>
-                      <SelectItem value="client">客户端 (Client)</SelectItem>
+                      <SelectItem value="server">服务器</SelectItem>
+                      <SelectItem value="client">客户端</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -222,15 +215,14 @@ export function CreateInstanceDialog({ open, onOpenChange, apiId, apiRoot, apiTo
                   <FormLabel>隧道地址</FormLabel>
                   <FormControl>
                     <Input 
-                      placeholder={instanceType === "server" ? "服务器监听的控制通道地址, 例如: 0.0.0.0:10101" : "要连接的 NodePass 服务器隧道地址, 例如: your.server.com:10101"} 
+                      placeholder={instanceType === "server" ? "服务器监听控制通道地址, 例: 0.0.0.0:10101" : "连接的 NodePass 服务器隧道地址, 例: your.server.com:10101"} 
                       {...field}
-                      className="text-sm"
                     />
                   </FormControl>
                   <FormDescription>
                     {instanceType === "server"
-                      ? "服务器模式下，这是服务器监听客户端控制连接的地址 (例如 '0.0.0.0:10101' 或 '[::]:10101')。"
-                      : "客户端模式下，这是要连接的 NodePass 服务器的隧道端点地址 (例如 'server.example.com:10101')。"}
+                      ? "服务器模式: 监听客户端控制连接的地址 (例 '0.0.0.0:10101')。"
+                      : "客户端模式: NodePass 服务器隧道地址 (例 'server.example.com:10101')。"}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -239,7 +231,7 @@ export function CreateInstanceDialog({ open, onOpenChange, apiId, apiRoot, apiTo
 
             {instanceType === 'client' && (
               <FormItem>
-                <FormLabel>或从现有服务器选择隧道</FormLabel>
+                <FormLabel>或从现有服务器选择</FormLabel>
                 <Select 
                   onValueChange={(value) => {
                     if (value) {
@@ -251,8 +243,8 @@ export function CreateInstanceDialog({ open, onOpenChange, apiId, apiRoot, apiTo
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder={
-                        isLoadingServerInstances ? "加载服务器列表中..." : 
-                        (!serverInstances || serverInstances.length === 0) ? "无可用服务器实例" : "选择一个服务器隧道"
+                        isLoadingServerInstances ? "加载服务器中..." : 
+                        (!serverInstances || serverInstances.length === 0) ? "无可用服务器" : "选择服务器隧道"
                       } />
                     </SelectTrigger>
                   </FormControl>
@@ -270,7 +262,7 @@ export function CreateInstanceDialog({ open, onOpenChange, apiId, apiRoot, apiTo
                   </SelectContent>
                 </Select>
                 {serverInstances && serverInstances.length === 0 && !isLoadingServerInstances && (
-                    <FormDescription>当前 API 配置下没有可用的服务器实例。</FormDescription>
+                    <FormDescription>当前 API 无可用服务器实例。</FormDescription>
                 )}
               </FormItem>
             )}
@@ -284,15 +276,14 @@ export function CreateInstanceDialog({ open, onOpenChange, apiId, apiRoot, apiTo
                   <FormLabel>目标地址</FormLabel>
                   <FormControl>
                     <Input 
-                      placeholder={instanceType === "server" ? "服务器监听的流量转发地址, 例如: 0.0.0.0:8080" : "本地流量转发地址, 例如: 127.0.0.1:8000"} 
+                      placeholder={instanceType === "server" ? "服务器监听流量转发地址, 例: 0.0.0.0:8080" : "本地流量转发地址, 例: 127.0.0.1:8000"} 
                       {...field} 
-                      className="text-sm"
                     />
                   </FormControl>
                    <FormDescription>
                     {instanceType === "server"
-                      ? "服务器模式下，这是服务器监听用于隧道传输的传入TCP/UDP流量的地址 (例如 '0.0.0.0:8080')。"
-                      : "客户端模式下，这是接收到的流量将被转发到的本地地址 (例如 '127.0.0.1:8000' 或 'localhost:3000')。"}
+                      ? "服务器模式: 监听隧道流量的地址 (例 '0.0.0.0:8080')。"
+                      : "客户端模式: 接收流量的本地转发地址 (例 '127.0.0.1:8000')。"}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -331,7 +322,7 @@ export function CreateInstanceDialog({ open, onOpenChange, apiId, apiRoot, apiTo
                   name="tlsMode"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>TLS 模式 (仅服务器)</FormLabel>
+                      <FormLabel>TLS 模式 (服务器)</FormLabel>
                       <Select onValueChange={field.onChange} defaultValue={field.value}>
                         <FormControl>
                           <SelectTrigger>
@@ -355,12 +346,11 @@ export function CreateInstanceDialog({ open, onOpenChange, apiId, apiRoot, apiTo
                       name="certPath"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>证书路径 (TLS 模式 2)</FormLabel>
+                          <FormLabel>证书路径 (TLS 2)</FormLabel>
                           <FormControl>
                             <Input 
-                              placeholder="例如: /path/to/your/cert.pem" 
+                              placeholder="例: /path/to/cert.pem" 
                               {...field} 
-                              className="text-sm"
                             />
                           </FormControl>
                           <FormMessage />
@@ -372,12 +362,11 @@ export function CreateInstanceDialog({ open, onOpenChange, apiId, apiRoot, apiTo
                       name="keyPath"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>密钥路径 (TLS 模式 2)</FormLabel>
+                          <FormLabel>密钥路径 (TLS 2)</FormLabel>
                           <FormControl>
                             <Input 
-                              placeholder="例如: /path/to/your/key.pem" 
+                              placeholder="例: /path/to/key.pem" 
                               {...field} 
-                              className="text-sm"
                             />
                           </FormControl>
                           <FormMessage />
@@ -404,5 +393,3 @@ export function CreateInstanceDialog({ open, onOpenChange, apiId, apiRoot, apiTo
     </Dialog>
   );
 }
-
-    

@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { AlertTriangle, Eye, Trash2, Wand2, ArrowDown, ArrowUp, Server, Smartphone, Search, Pencil } from 'lucide-react';
 import type { Instance, UpdateInstanceRequest } from '@/types/nodepass';
 import { InstanceStatusBadge } from './InstanceStatusBadge';
@@ -72,14 +72,14 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
     onSuccess: (data) => {
       toast({
         title: '实例已更新',
-        description: `实例 ${data.id} 状态已更改为 ${data.status}。`,
+        description: `实例 ${data.id} 状态已改为 ${data.status}。`,
       });
       queryClient.invalidateQueries({ queryKey: ['instances', apiId] });
     },
     onError: (error: any) => {
       toast({
         title: '更新实例出错',
-        description: error.message || '发生未知错误。',
+        description: error.message || '未知错误。',
         variant: 'destructive',
       });
     },
@@ -101,7 +101,7 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
     onError: (error: any) => {
       toast({
         title: '删除实例出错',
-        description: error.message || '发生未知错误。',
+        description: error.message || '未知错误。',
         variant: 'destructive',
       });
     },
@@ -136,7 +136,7 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
       <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
         <div>
           <CardTitle className="text-xl">实例概览 (API: {apiName || 'N/A'})</CardTitle>
-          <p className="text-sm text-muted-foreground">管理和监控您的 NodePass 实例。</p>
+          <CardDescription>管理和监控 NodePass 实例。</CardDescription>
         </div>
         <div className="relative mt-4 sm:mt-0 w-full sm:w-64">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -152,7 +152,7 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
       <CardContent>
         {!apiId && (
           <div className="text-center py-10 text-muted-foreground">
-            请先从顶部设置菜单选择一个活动的 API 连接。
+            请先选择活动 API 连接。
           </div>
         )}
         {apiId && instancesError && (
@@ -207,21 +207,17 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
                             onAction={(id, action) => updateInstanceMutation.mutate({ instanceId: id, action })}
                             isLoading={updateInstanceMutation.isPending && updateInstanceMutation.variables?.instanceId === instance.id}
                         />
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedInstanceForDetails(instance)}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedInstanceForDetails(instance)} aria-label="查看详情">
                           <Eye className="h-4 w-4" />
-                          <span className="sr-only">查看详情</span>
                         </Button>
-                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedInstanceForModify(instance)}>
+                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedInstanceForModify(instance)} aria-label="修改">
                           <Pencil className="h-4 w-4" />
-                          <span className="sr-only">修改</span>
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedInstanceForOptimize(instance)}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedInstanceForOptimize(instance)} aria-label="优化">
                           <Wand2 className="h-4 w-4" />
-                          <span className="sr-only">优化</span>
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setSelectedInstanceForDelete(instance)}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setSelectedInstanceForDelete(instance)} aria-label="删除">
                           <Trash2 className="h-4 w-4" />
-                          <span className="sr-only">删除</span>
                         </Button>
                       </div>
                     </TableCell>
@@ -231,14 +227,14 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
                 <TableRow>
                   <TableCell colSpan={7} className="text-center h-24">
                     {isLoadingInstances 
-                      ? "加载实例中..." 
+                      ? "加载中..." 
                       : !apiId 
-                        ? "请先选择一个活动的 API 连接。"
+                        ? "请先选择活动 API 连接。"
                         : searchTerm && (!filteredInstances || filteredInstances.length === 0)
-                          ? "未找到与您搜索匹配的实例。"
+                          ? "无搜索匹配实例。"
                           : instances && instances.length === 0
-                            ? "无可用实例。"
-                            : "加载实例中或无可用实例。"
+                            ? "无实例。"
+                            : "加载中或无实例。"
                     }
                   </TableCell>
                 </TableRow>

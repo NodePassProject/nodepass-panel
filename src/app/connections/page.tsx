@@ -5,7 +5,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useApiConfig, type NamedApiConfig } from '@/hooks/use-api-key';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'; // Card used for empty state
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -63,10 +63,11 @@ export default function ConnectionsPage() {
   };
 
   const handleSetActive = (id: string) => {
+    const config = apiConfigsList.find(c => c.id === id);
     setActiveApiConfigId(id);
     toast({
       title: '活动连接已切换',
-      description: `现在已连接到 “${apiConfigsList.find(c => c.id === id)?.name}”。`,
+      description: `已连接到 “${config?.name}”。`,
     });
     router.push('/'); 
   };
@@ -106,11 +107,11 @@ export default function ConnectionsPage() {
       {apiConfigsList.length === 0 ? (
         <Card className="text-center py-10 shadow-lg">
           <CardHeader>
-            <CardTitle>没有已保存的连接</CardTitle>
+            <CardTitle>无已存连接</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-muted-foreground">您还没有添加任何 API 连接。</p>
-            <p className="text-muted-foreground">点击上方的“添加新连接”按钮开始。</p>
+            <p className="text-muted-foreground">未添加任何 API 连接。</p>
+            <p className="text-muted-foreground">点击“添加新连接”开始。</p>
           </CardContent>
         </Card>
       ) : (
@@ -120,7 +121,7 @@ export default function ConnectionsPage() {
               <TableRow>
                 <TableHead className="w-[80px] text-center">状态</TableHead>
                 <TableHead>连接名称</TableHead>
-                <TableHead>API 接口地址</TableHead>
+                <TableHead>API 地址</TableHead>
                 <TableHead className="w-[150px]">前缀路径</TableHead>
                 <TableHead className="text-right w-[280px]">操作</TableHead>
               </TableRow>
@@ -154,7 +155,7 @@ export default function ConnectionsPage() {
                             size="sm" 
                             onClick={() => setDeletingConfig(config)}
                             aria-label={`删除连接 ${config.name}`}
-                            disabled={activeApiConfig?.id === config.id} // Cannot delete active config
+                            disabled={activeApiConfig?.id === config.id}
                           >
                             <Trash2 className="mr-1 h-4 w-4" />
                             删除
@@ -165,7 +166,7 @@ export default function ConnectionsPage() {
                             <AlertDialogHeader>
                               <AlertDialogTitle>确认删除</AlertDialogTitle>
                               <AlertDialogDescription>
-                                您确定要删除连接 “{deletingConfig.name}” 吗？此操作无法撤销。
+                                确定删除连接 “{deletingConfig.name}”？此操作无法撤销。
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>

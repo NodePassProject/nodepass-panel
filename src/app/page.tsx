@@ -20,8 +20,8 @@ export default function HomePage() {
     addOrUpdateApiConfig, 
     isLoading: isLoadingApiConfig,
     setActiveApiConfigId,
-    getApiRootUrl, // Added
-    getToken       // Added
+    getApiRootUrl, 
+    getToken       
   } = useApiConfig();
   const { toast } = useToast();
   
@@ -44,7 +44,7 @@ export default function HomePage() {
     setIsApiConfigDialogOpenForSetup(false);
     toast({
       title: configToSave.id ? '连接已更新' : '连接已添加',
-      description: `“${savedConfig.name}”已保存并设为活动连接。`,
+      description: `“${savedConfig.name}”已保存并激活。`,
     });
   };
   
@@ -53,7 +53,6 @@ export default function HomePage() {
     setIsApiConfigDialogOpenForSetup(true);
   };
 
-  // Derive apiRoot and token for the active config
   const currentApiRoot = activeApiConfig ? getApiRootUrl(activeApiConfig.id) : null;
   const currentToken = activeApiConfig ? getToken(activeApiConfig.id) : null;
 
@@ -99,8 +98,8 @@ export default function HomePage() {
             </h2>
             <p className="text-muted-foreground mb-6">
               {apiConfigsList.length > 0 
-                ? '请从顶部设置菜单中选择一个 API 连接，或添加一个新的连接。' 
-                : '请添加您的第一个 NodePass API 连接以开始管理实例。'}
+                ? '请选择或添加 API 连接。' 
+                : '请先添加 API 连接。'}
             </p>
             {apiConfigsList.length === 0 && (
               <Button onClick={handleOpenApiConfigDialogForSetup} size="lg">
@@ -109,7 +108,7 @@ export default function HomePage() {
             )}
              {apiConfigsList.length > 0 && !activeApiConfig && (
               <p className="text-sm text-muted-foreground mt-4">
-                您可以通过点击页面右上角的设置图标来选择、添加或管理 API 连接。
+                点击右上角设置图标管理 API 连接。
               </p>
             )}
           </div>
@@ -124,7 +123,6 @@ export default function HomePage() {
       <CreateInstanceDialog
         open={isCreateInstanceDialogOpen}
         onOpenChange={setIsCreateInstanceDialogOpen}
-        // Pass current API details for instance creation
         apiId={activeApiConfig?.id || null}
         apiRoot={currentApiRoot}
         apiToken={currentToken}

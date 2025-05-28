@@ -30,7 +30,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     setIsApiConfigDialogOpen(false);
     toast({
       title: configToSave.id ? '连接已更新' : '连接已添加',
-      description: `“${savedConfig.name}”已保存并设为活动连接。`,
+      description: `“${savedConfig.name}”已保存并激活。`,
     });
   };
   
@@ -43,7 +43,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     clearActiveApiConfig();
     toast({
       title: '已断开连接',
-      description: '当前 API 连接已断开。',
+      description: 'API 连接已断开。',
     });
   };
 

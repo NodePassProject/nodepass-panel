@@ -7,7 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Rss, ChevronRight, ChevronDown, Server, Smartphone } from 'lucide-react';
 import type { Instance, InstanceEvent } from '@/types/nodepass';
-import { getEventsUrl } from '@/lib/api'; // Direct SSE URL
+import { getEventsUrl } from '@/lib/api'; 
 import { InstanceStatusBadge } from './InstanceStatusBadge';
 
 interface EventLogProps {
@@ -24,41 +24,44 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setEvents([]);
+    setEvents([]); 
     
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
 
-    if (!apiId || !apiRoot || !apiName) {
+    if (!apiId || !apiRoot || !apiToken || !apiName) {
       const reason = !apiId ? "API 连接未激活或ID无效" : !apiRoot ? "活动 API 配置的 URL 无效" : "活动 API 配置的名称无效";
-      setEvents([{ type: 'log', data: `${reason}。事件流已禁用。`, timestamp: new Date().toISOString() }]);
+      setEvents([{ type: 'log', data: `API 配置无效，事件流禁用。`, timestamp: new Date().toISOString() }]);
       return;
     }
 
     const directEventsUrl = getEventsUrl(apiRoot); 
     
-    const initialMessage = `正在直接初始化事件流到 ${directEventsUrl}... (注意：EventSource 无法发送 X-API-Key 进行认证，如果服务器需要，可能会失败)`;
-    setEvents([{ type: 'log', data: initialMessage, timestamp: new Date().toISOString() }]);
+    setEvents([{ type: 'log', data: `正在直接初始化事件流到 ${directEventsUrl}... (注意：EventSource 无法发送 X-API-Key 进行认证，如果服务器需要，可能会失败)`, timestamp: new Date().toISOString() }]);
     
-    const newEventSource = new EventSource(directEventsUrl); // No token in URL for direct connection
+    const newEventSource = new EventSource(directEventsUrl); 
     eventSourceRef.current = newEventSource;
-    const currentEffectEventSource = newEventSource;
+    const currentEffectEventSource = newEventSource; // Capture for closure
 
     newEventSource.onopen = () => {
-      if (eventSourceRef.current !== currentEffectEventSource) return;
-
-      const connectionMessage = `事件流已直接连接。等待事件... (目标: ${directEventsUrl})`;
+      if (eventSourceRef.current !== currentEffectEventSource) return; // Stale closure check
       setEvents((prevEvents) => {
-        const filtered = prevEvents.filter(e => e.data !== initialMessage && !e.data.startsWith("EventSource"));
-        return [{ type: 'log', data: connectionMessage, timestamp: new Date().toISOString() }, ...filtered.slice(0, 99)];
+         // Clear previous non-error messages or only keep the latest system messages
+        const systemMessages = prevEvents.filter(e => e.data.startsWith("正在直接初始化事件流到") || e.data.startsWith("EventSource"));
+        const otherMessages = prevEvents.filter(e => !systemMessages.includes(e) && e.type !== 'log'); // Keep non-log events
+
+        return [
+          { type: 'log', data: `事件流已连接，等待事件... (目标: ${directEventsUrl})`, timestamp: new Date().toISOString() },
+          ...otherMessages, // Keep older non-log events
+          ...(systemMessages.length > 0 ? [systemMessages[systemMessages.length-1]] : []) // Keep latest system message if any
+        ].slice(0, 100);
       });
     };
 
     newEventSource.addEventListener('instance', (event) => {
       if (eventSourceRef.current !== currentEffectEventSource) return;
-
       console.log('SSE "instance" event received from server:', event.data);
       try {
         const serverEventPayload = JSON.parse(event.data as string);
@@ -129,20 +132,20 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       const rs = currentEffectEventSource.readyState;
       let uiErrorMessage: string;
 
-      if (rs === EventSource.CONNECTING) { // Value is 0
-        uiErrorMessage = `EventSource 尝试连接时出错。请检查网络、服务器 (${directEventsUrl}) 日志，并确认认证方式 (如是否需要 X-API-Key)。`;
-      } else if (rs === EventSource.CLOSED) { // Value is 2
-        uiErrorMessage = `EventSource 连接已关闭。对于直接连接, 这通常是因为服务器需要 X-API-Key 认证头 (EventSource无法发送) 或其他服务器端问题。请检查服务器 (${directEventsUrl}) 日志。`;
+      if (rs === EventSource.CONNECTING) { 
+        uiErrorMessage = `EventSource 连接出错。检查网络、服务器 (${directEventsUrl}) 日志及认证方式。`;
+      } else if (rs === EventSource.CLOSED) { 
+        uiErrorMessage = `EventSource 连接已关闭。直接连接可能因服务器需 X-API-Key (EventSource无法发送) 或其他问题。检查服务器 (${directEventsUrl}) 日志。`;
       } else { 
-        uiErrorMessage = `EventSource 遇到未知连接错误 (状态: ${rs})。请检查服务器 (${directEventsUrl}) 日志。`;
+        uiErrorMessage = `EventSource 未知连接错误 (状态: ${rs})。检查服务器 (${directEventsUrl}) 日志。`;
       }
       
-      console.error(uiErrorMessage); // Simplified console error to match UI message
+      console.error(uiErrorMessage); 
       
       const errorEventLog: InstanceEvent = { type: 'log', data: uiErrorMessage, timestamp: new Date().toISOString() };
       setEvents((prevEvents) => {
         if (prevEvents.length > 0 && prevEvents[0].data === uiErrorMessage && prevEvents[0].type === 'log') {
-          return prevEvents; // Avoid duplicate error messages in UI
+          return prevEvents; 
         }
         return [errorEventLog, ...prevEvents.slice(0, 99)];
       });
@@ -156,12 +159,12 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
          eventSourceRef.current = null;
       }
     };
-  }, [apiId, apiRoot, apiName]);
+  }, [apiId, apiRoot, apiToken, apiName]);
 
 
   const getBadgeTextAndVariant = (type: InstanceEvent['type']): { text: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' | 'accent' } => {
     if (type.includes('created')) return { text: '已创建', variant: 'default' };
-    if (type.includes('updated')) return { text: 'secondary', variant: 'secondary' }; // Changed text to match variant for consistency
+    if (type.includes('updated')) return { text: '已更新', variant: 'secondary' };
     if (type.includes('deleted')) return { text: '已删除', variant: 'destructive' };
     return { text: '日志', variant: 'outline' };
   }
@@ -181,12 +184,12 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
           实时事件日志
         </CardTitle>
         <CardDescription>
-          来自 NodePass 实例的实时更新 (API: {apiName || 'N/A'}，直接连接)。
+          NodePass 实例实时更新 (API: {apiName || 'N/A'}，直接连接)。
         </CardDescription>
       </CardHeader>
       <CardContent>
         <ScrollArea className="h-80 w-full rounded-md border p-3 bg-muted/20 text-xs" ref={scrollAreaRef}>
-          {events.length === 0 && <p className="text-sm text-muted-foreground">暂无事件。</p>}
+          {events.length === 0 && <p className="text-sm text-muted-foreground">无事件。</p>}
           {events.map((event, index) => {
             const isExpanded = expandedIndex === index;
             const { text: badgeText, variant: badgeVariant } = getBadgeTextAndVariant(event.type);
@@ -254,7 +257,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
                         {JSON.stringify(event.data, null, 2)}
                       </pre>
                     ) : (
-                       <p className="text-xs text-muted-foreground italic">无更多详情。</p>
+                       <p className="text-xs text-muted-foreground italic">无详情。</p>
                     )}
                   </div>
                 )}
@@ -266,6 +269,3 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
     </Card>
   );
 }
-    
-
-    

@@ -14,12 +14,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { KeyRound } from 'lucide-react';
-import type { NamedApiConfig } from '@/hooks/use-api-key'; // Updated type
+import type { NamedApiConfig } from '@/hooks/use-api-key'; 
 
 interface ApiConfigDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (config: Omit<NamedApiConfig, 'id'> & { id?: string }) => void; // Can pass id for updates
+  onSave: (config: Omit<NamedApiConfig, 'id'> & { id?: string }) => void; 
   currentConfig?: NamedApiConfig | null;
   isEditing?: boolean;
 }
@@ -43,7 +43,7 @@ export function ApiConfigDialog({ open, onOpenChange, onSave, currentConfig, isE
     e.preventDefault();
     if (nameInput.trim() && apiUrlInput.trim() && tokenInput.trim()) {
       onSave({
-        id: currentConfig?.id, // Pass ID if editing
+        id: currentConfig?.id, 
         name: nameInput.trim(),
         apiUrl: apiUrlInput.trim(),
         token: tokenInput.trim(),
@@ -67,8 +67,7 @@ export function ApiConfigDialog({ open, onOpenChange, onSave, currentConfig, isE
               {isEditing ? '编辑 API 连接' : '添加 API 连接'}
             </DialogTitle>
             <DialogDescription>
-              输入您的 NodePass API 连接名称、URL、令牌和可选的前缀路径。这些信息将存储在您的浏览器本地。
-              API 端点版本固定为 v1 (例如: {displayApiUrl}{displayPrefixPath}/v1/*)。
+              输入 NodePass API 名称、URL、令牌和可选前缀路径 (本地存储)。API 端点固定为 v1 (例: {displayApiUrl}{displayPrefixPath}/v1/*)。
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -78,17 +77,17 @@ export function ApiConfigDialog({ open, onOpenChange, onSave, currentConfig, isE
                 id="config-name"
                 value={nameInput}
                 onChange={(e) => setNameInput(e.target.value)}
-                placeholder="例如: 本地开发服务器"
+                placeholder="例: 本地服务器"
                 required
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="api-url">API 接口地址</Label>
+              <Label htmlFor="api-url">API 地址</Label>
               <Input
                 id="api-url"
                 value={apiUrlInput}
                 onChange={(e) => setApiUrlInput(e.target.value)}
-                placeholder="例如: http://localhost:3000 或 http://[2a12::1]:3134"
+                placeholder="例: http://localhost:3000"
                 required
               />
             </div>
@@ -98,7 +97,7 @@ export function ApiConfigDialog({ open, onOpenChange, onSave, currentConfig, isE
                 id="token"
                 value={tokenInput}
                 onChange={(e) => setTokenInput(e.target.value)}
-                placeholder="输入您的令牌"
+                placeholder="输入令牌"
                 type="password"
                 required
               />
@@ -109,7 +108,7 @@ export function ApiConfigDialog({ open, onOpenChange, onSave, currentConfig, isE
                 id="prefix-path"
                 value={prefixPathInput}
                 onChange={(e) => setPrefixPathInput(e.target.value)}
-                placeholder="例如: api (如果API是 http://host/api/v1)"
+                placeholder="例: api (若 API 为 http://host/api/v1)"
               />
             </div>
           </div>
