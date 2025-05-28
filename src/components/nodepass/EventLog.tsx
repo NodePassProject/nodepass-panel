@@ -13,7 +13,7 @@ import { InstanceStatusBadge } from './InstanceStatusBadge';
 interface EventLogProps {
   apiId: string | null;
   apiRoot: string | null;
-  apiToken: string | null; // Token is NOT used by EventSource for direct connection
+  apiToken: string | null;
   apiName: string | null;
 }
 
@@ -24,35 +24,30 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Clear previous events when API config changes
-    setEvents([]); 
+    setEvents([]);
     
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
 
-    if (!apiId || !apiRoot) {
-      const reason = !apiId ? "API 连接未激活或ID无效" : "活动 API 配置的 URL 无效";
+    if (!apiId || !apiRoot || !apiName) {
+      const reason = !apiId ? "API 连接未激活或ID无效" : !apiRoot ? "活动 API 配置的 URL 无效" : "活动 API 配置的名称无效";
       setEvents([{ type: 'log', data: `${reason}。事件流已禁用。`, timestamp: new Date().toISOString() }]);
       return;
     }
 
-    const directEventsUrl = getEventsUrl(apiRoot); // This returns direct /v1/events URL
+    const directEventsUrl = getEventsUrl(apiRoot); 
     
     const initialMessage = `正在直接初始化事件流到 ${directEventsUrl}... (注意：EventSource 无法发送 X-API-Key 进行认证，如果服务器需要，可能会失败)`;
     setEvents([{ type: 'log', data: initialMessage, timestamp: new Date().toISOString() }]);
     
-    const newEventSource = new EventSource(directEventsUrl);
+    const newEventSource = new EventSource(directEventsUrl); // No token in URL for direct connection
     eventSourceRef.current = newEventSource;
-
-    // Variable to hold the current EventSource instance for this effect run
-    // This helps prevent acting on events from a stale EventSource after dependencies change
     const currentEffectEventSource = newEventSource;
 
-
     newEventSource.onopen = () => {
-      if (eventSourceRef.current !== currentEffectEventSource) return; // Stale event source
+      if (eventSourceRef.current !== currentEffectEventSource) return;
 
       const connectionMessage = `事件流已直接连接。等待事件... (目标: ${directEventsUrl})`;
       setEvents((prevEvents) => {
@@ -62,7 +57,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
     };
 
     newEventSource.addEventListener('instance', (event) => {
-      if (eventSourceRef.current !== currentEffectEventSource) return; // Stale event source
+      if (eventSourceRef.current !== currentEffectEventSource) return;
 
       console.log('SSE "instance" event received from server:', event.data);
       try {
@@ -131,7 +126,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
     newEventSource.onerror = (event: Event) => { 
       if (eventSourceRef.current !== currentEffectEventSource && currentEffectEventSource.readyState !== EventSource.CLOSED) return; 
 
-      const rs = currentEffectEventSource.readyState; // Use readyState from the event source that triggered the error
+      const rs = currentEffectEventSource.readyState;
       let uiErrorMessage: string;
 
       if (rs === EventSource.CONNECTING) { // Value is 0
@@ -142,19 +137,12 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
         uiErrorMessage = `EventSource 遇到未知连接错误 (状态: ${rs})。请检查服务器 (${directEventsUrl}) 日志。`;
       }
       
-      console.error( // This is line 143 in the user's error log
-        `EventSource 错误 (客户端). ReadyState: ${rs}. ` +
-        `直接连接到: ${directEventsUrl}. ` +
-        `客户端事件对象通常缺乏详细信息。` + // Removed "(如下所示)"
-        `如果这是认证错误，请注意 EventSource 无法发送 X-API-Key 头。` +
-        `请检查 NodePass API 服务器 (${directEventsUrl}) 的日志以了解根本原因。`
-        // Removed the separate 'event' object argument to make console output cleaner
-      );
+      console.error(uiErrorMessage); // Simplified console error to match UI message
       
       const errorEventLog: InstanceEvent = { type: 'log', data: uiErrorMessage, timestamp: new Date().toISOString() };
       setEvents((prevEvents) => {
         if (prevEvents.length > 0 && prevEvents[0].data === uiErrorMessage && prevEvents[0].type === 'log') {
-          return prevEvents;
+          return prevEvents; // Avoid duplicate error messages in UI
         }
         return [errorEventLog, ...prevEvents.slice(0, 99)];
       });
@@ -168,19 +156,19 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
          eventSourceRef.current = null;
       }
     };
-  }, [apiId, apiRoot, apiName]); // apiToken is not directly used by EventSource for direct connection
+  }, [apiId, apiRoot, apiName]);
 
 
   const getBadgeTextAndVariant = (type: InstanceEvent['type']): { text: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' | 'accent' } => {
     if (type.includes('created')) return { text: '已创建', variant: 'default' };
-    if (type.includes('updated')) return { text: '已更新', variant: 'secondary' };
+    if (type.includes('updated')) return { text: 'secondary', variant: 'secondary' }; // Changed text to match variant for consistency
     if (type.includes('deleted')) return { text: '已删除', variant: 'destructive' };
     return { text: '日志', variant: 'outline' };
   }
   
   const isExpandable = (event: InstanceEvent): boolean => {
     if (event.instanceDetails) return true;
-    if (event.type === 'log' && typeof event.data === 'string' && event.data.length > 100) return true; // Only make long logs expandable
+    if (event.type === 'log' && typeof event.data === 'string' && event.data.length > 100) return true;
     if (event.type !== 'log' && typeof event.data === 'object' && event.data !== null && !event.instanceDetails) return true;
     return false;
   };
@@ -219,7 +207,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
                   }}
                   style={canExpand ? { cursor: 'pointer' } : {}}
                 >
-                  <div className="flex items-center shrink-0 w-6 h-[1.125rem]"> {/* Height to match badge line-height approx */}
+                  <div className="flex items-center shrink-0 w-6 h-[1.125rem]">
                     {canExpand && (
                       isExpanded ? <ChevronDown className="h-4 w-4 " /> : <ChevronRight className="h-4 w-4 " />
                     )}
@@ -278,4 +266,6 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
     </Card>
   );
 }
+    
+
     
