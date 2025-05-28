@@ -1,0 +1,72 @@
+
+"use client";
+
+import React, { type ReactNode } from 'react';
+import { Header } from '@/components/layout/Header';
+import { useApiConfig, type NamedApiConfig } from '@/hooks/use-api-key';
+import { useToast } from '@/hooks/use-toast';
+import { ApiConfigDialog } from '@/components/nodepass/ApiKeyDialog'; // For Header props
+
+interface AppLayoutProps {
+  children: ReactNode;
+}
+
+export function AppLayout({ children }: AppLayoutProps) {
+  const { 
+    activeApiConfig, 
+    apiConfigsList,
+    addOrUpdateApiConfig, 
+    clearActiveApiConfig, 
+    setActiveApiConfigId 
+  } = useApiConfig();
+  const { toast } = useToast();
+  const [isApiConfigDialogOpen, setIsApiConfigDialogOpen] = React.useState(false);
+  const [editingApiConfig, setEditingApiConfig] = React.useState<NamedApiConfig | null>(null);
+
+  const handleSaveApiConfig = (configToSave: Omit<NamedApiConfig, 'id'> & { id?: string }) => {
+    const savedConfig = addOrUpdateApiConfig(configToSave);
+    setActiveApiConfigId(savedConfig.id); 
+    setEditingApiConfig(null);
+    setIsApiConfigDialogOpen(false);
+    toast({
+      title: configToSave.id ? '连接已更新' : '连接已添加',
+      description: `“${savedConfig.name}”已保存并设为活动连接。`,
+    });
+  };
+  
+  const handleOpenApiConfigDialog = (configToEdit?: NamedApiConfig | null) => {
+    setEditingApiConfig(configToEdit || null);
+    setIsApiConfigDialogOpen(true);
+  };
+
+  const handleLogout = () => { 
+    clearActiveApiConfig();
+    toast({
+      title: '已断开连接',
+      description: '当前 API 连接已断开。',
+    });
+  };
+
+  return (
+    <div className="flex flex-col min-h-screen bg-background">
+      <Header 
+        onManageApiConfigs={handleOpenApiConfigDialog}
+        hasActiveApiConfig={!!activeApiConfig} 
+        onClearActiveConfig={handleLogout}
+      />
+      <main className="flex-grow container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {children}
+      </main>
+      <ApiConfigDialog
+        open={isApiConfigDialogOpen}
+        onOpenChange={setIsApiConfigDialogOpen}
+        onSave={handleSaveApiConfig}
+        currentConfig={editingApiConfig}
+        isEditing={!!editingApiConfig}
+      />
+      <footer className="py-6 text-center text-sm text-muted-foreground border-t">
+        NodePass 管理器 &copy; {new Date().getFullYear()}
+      </footer>
+    </div>
+  );
+}

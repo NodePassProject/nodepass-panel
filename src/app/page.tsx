@@ -2,13 +2,13 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Header } from '@/components/layout/Header';
+import { AppLayout } from '@/components/layout/AppLayout'; // Import AppLayout
 import { ApiConfigDialog } from '@/components/nodepass/ApiKeyDialog';
-import { CreateInstanceDialog } from '@/components/nodepass/CreateInstanceDialog'; // Updated import
+import { CreateInstanceDialog } from '@/components/nodepass/CreateInstanceDialog';
 import { InstanceList } from '@/components/nodepass/InstanceList';
 import { EventLog } from '@/components/nodepass/EventLog';
 import { useApiConfig, type NamedApiConfig } from '@/hooks/use-api-key';
-import { Loader2, PlusCircle } from 'lucide-react'; // Added PlusCircle
+import { Loader2, PlusCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 
@@ -18,71 +18,55 @@ export default function HomePage() {
     activeApiConfig, 
     apiConfigsList,
     addOrUpdateApiConfig, 
-    clearActiveApiConfig, 
+    // clearActiveApiConfig, // Handled by AppLayout's Header
     isLoading: isLoadingApiConfig,
     setActiveApiConfigId 
   } = useApiConfig();
   const { toast } = useToast();
   
-  const [isApiConfigDialogOpen, setIsApiConfigDialogOpen] = useState(false);
-  const [editingApiConfig, setEditingApiConfig] = useState<NamedApiConfig | null>(null);
-  const [isCreateInstanceDialogOpen, setIsCreateInstanceDialogOpen] = useState(false); // State for new dialog
+  // This dialog state is specific to HomePage for initial setup if no configs exist
+  const [isApiConfigDialogOpenForSetup, setIsApiConfigDialogOpenForSetup] = useState(false);
+  const [editingApiConfigForSetup, setEditingApiConfigForSetup] = useState<NamedApiConfig | null>(null);
+
+  const [isCreateInstanceDialogOpen, setIsCreateInstanceDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!isLoadingApiConfig && apiConfigsList.length === 0 && !activeApiConfig) {
-      setEditingApiConfig(null); 
-      setIsApiConfigDialogOpen(true);
+      setEditingApiConfigForSetup(null); 
+      setIsApiConfigDialogOpenForSetup(true);
     }
   }, [apiConfigsList, isLoadingApiConfig, activeApiConfig]);
 
-  const handleSaveApiConfig = (configToSave: Omit<NamedApiConfig, 'id'> & { id?: string }) => {
+  const handleSaveApiConfigForSetup = (configToSave: Omit<NamedApiConfig, 'id'> & { id?: string }) => {
     const savedConfig = addOrUpdateApiConfig(configToSave);
     setActiveApiConfigId(savedConfig.id); 
-    setEditingApiConfig(null);
-    setIsApiConfigDialogOpen(false);
+    setEditingApiConfigForSetup(null);
+    setIsApiConfigDialogOpenForSetup(false);
     toast({
       title: configToSave.id ? '连接已更新' : '连接已添加',
       description: `“${savedConfig.name}”已保存并设为活动连接。`,
     });
   };
   
-  const handleOpenApiConfigDialog = (configToEdit?: NamedApiConfig | null) => {
-    setEditingApiConfig(configToEdit || null);
-    setIsApiConfigDialogOpen(true);
+  // This function is specifically for the "Add API Connection" button on this page when no active config
+  const handleOpenApiConfigDialogForSetup = () => {
+    setEditingApiConfigForSetup(null);
+    setIsApiConfigDialogOpenForSetup(true);
   };
 
-  const handleLogout = () => { 
-    clearActiveApiConfig();
-    toast({
-      title: '已断开连接',
-      description: '当前 API 连接已断开。',
-    });
-  };
 
   if (isLoadingApiConfig) {
     return (
-      <div className="flex flex-col min-h-screen">
-        <Header 
-          onManageApiConfigs={handleOpenApiConfigDialog} 
-          hasActiveApiConfig={!!activeApiConfig} 
-          onClearActiveConfig={handleLogout}
-        />
-        <main className="flex-grow container mx-auto px-4 py-8 flex items-center justify-center">
-          <Loader2 className="h-12 w-12 animate-spin text-primary" />
-          <p className="ml-4 text-lg">加载 API 配置中...</p>
-        </main>
+      // AppLayout will render Header and Footer, so just the loading content here
+      <div className="flex-grow container mx-auto px-4 py-8 flex items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="ml-4 text-lg">加载 API 配置中...</p>
       </div>
     );
   }
   
   return (
-    <div className="flex flex-col min-h-screen bg-background">
-      <Header 
-        onManageApiConfigs={handleOpenApiConfigDialog}
-        hasActiveApiConfig={!!activeApiConfig} 
-        onClearActiveConfig={handleLogout}
-      />
-      <main className="flex-grow container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <AppLayout>
         {activeApiConfig ? (
           <div className="space-y-8">
             <div className="text-right">
@@ -95,7 +79,7 @@ export default function HomePage() {
             <EventLog />
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center text-center h-[calc(100vh-10rem)]">
+          <div className="flex flex-col items-center justify-center text-center h-[calc(100vh-10rem-4rem)]"> {/* Adjust height considering header/footer in AppLayout */}
             <h2 className="text-2xl font-semibold mb-4">
               {apiConfigsList.length > 0 ? '未选择 API 连接' : '需要 API 连接'}
             </h2>
@@ -105,7 +89,7 @@ export default function HomePage() {
                 : '请添加您的第一个 NodePass API 连接以开始管理实例。'}
             </p>
             {apiConfigsList.length === 0 && (
-              <Button onClick={() => handleOpenApiConfigDialog(null)} size="lg">
+              <Button onClick={handleOpenApiConfigDialogForSetup} size="lg">
                 添加 API 连接
               </Button>
             )}
@@ -116,21 +100,18 @@ export default function HomePage() {
             )}
           </div>
         )}
-      </main>
+      {/* This ApiConfigDialog is for the initial setup if no configs exist */}
       <ApiConfigDialog
-        open={isApiConfigDialogOpen}
-        onOpenChange={setIsApiConfigDialogOpen}
-        onSave={handleSaveApiConfig}
-        currentConfig={editingApiConfig}
-        isEditing={!!editingApiConfig}
+        open={isApiConfigDialogOpenForSetup}
+        onOpenChange={setIsApiConfigDialogOpenForSetup}
+        onSave={handleSaveApiConfigForSetup}
+        currentConfig={editingApiConfigForSetup}
+        isEditing={!!editingApiConfigForSetup}
       />
       <CreateInstanceDialog
         open={isCreateInstanceDialogOpen}
         onOpenChange={setIsCreateInstanceDialogOpen}
       />
-      <footer className="py-6 text-center text-sm text-muted-foreground border-t">
-        NodePass 管理器 &copy; {new Date().getFullYear()}
-      </footer>
-    </div>
+    </AppLayout>
   );
 }

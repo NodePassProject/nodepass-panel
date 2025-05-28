@@ -20,6 +20,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { AppLayout } from '@/components/layout/AppLayout'; // Import AppLayout
 
 export default function ConnectionsPage() {
   const router = useRouter();
@@ -45,7 +46,7 @@ export default function ConnectionsPage() {
 
   const handleSaveApiConfig = (configToSave: Omit<NamedApiConfig, 'id'> & { id?: string }) => {
     const savedConfig = addOrUpdateApiConfig(configToSave);
-    setActiveApiConfigId(savedConfig.id); // Optionally set new/updated config as active
+    // setActiveApiConfigId(savedConfig.id); // Optionally set new/updated config as active
     setEditingApiConfig(null);
     setIsApiConfigDialogOpen(false);
     toast({
@@ -77,14 +78,16 @@ export default function ConnectionsPage() {
   
   if (isLoadingApiConfig) {
     return (
-      <div className="container mx-auto px-4 py-8 text-center">
-        <p>加载 API 连接中...</p>
-      </div>
+      <AppLayout>
+        <div className="text-center">
+          <p>加载 API 连接中...</p>
+        </div>
+      </AppLayout>
     );
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <AppLayout>
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold">API 连接管理</h1>
         <Button onClick={() => handleOpenApiConfigDialog(null)} size="lg">
@@ -187,6 +190,6 @@ export default function ConnectionsPage() {
         currentConfig={editingApiConfig}
         isEditing={!!editingApiConfig}
       />
-    </div>
+    </AppLayout>
   );
 }
