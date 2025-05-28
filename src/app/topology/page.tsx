@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { useApiConfig } from '@/hooks/use-api-key';
+import { useApiConfig, type NamedApiConfig } from '@/hooks/use-api-key';
 import { nodePassApi } from '@/lib/api';
 import type { Instance } from '@/types/nodepass';
 import { AlertTriangle, Loader2, RefreshCw, Info, ServerIcon, SmartphoneIcon, ArrowRightLeft } from 'lucide-react';
@@ -33,15 +33,19 @@ interface ServerInstanceDetails extends InstanceWithApiDetails {
 
 function parseTunnelAddr(urlString: string): string | null {
   try {
+    // Try parsing as a full URL first (e.g., scheme://host:port/...)
     const url = new URL(urlString); 
-    return url.host; 
+    return url.host; // This gives 'host:port' or just 'host' if no port
   } catch (e) {
+    // If not a full URL, try to parse as scheme://addr/...
     const schemeSeparator = "://";
     const schemeIndex = urlString.indexOf(schemeSeparator);
-    if (schemeIndex === -1) return null;
+    if (schemeIndex === -1) return null; // No scheme found
 
+    // Get the part after '://'
     const restOfString = urlString.substring(schemeIndex + schemeSeparator.length);
     
+    // Find the end of the tunnel_addr (before '/' or '?')
     const pathSeparatorIndex = restOfString.indexOf('/');
     const querySeparatorIndex = restOfString.indexOf('?');
     let endOfTunnelAddr = -1;
@@ -59,42 +63,52 @@ function parseTunnelAddr(urlString: string): string | null {
 }
 
 function parseTargetAddr(urlString: string): string | null {
+  // scheme://tunnel_addr/target_addr?params
   const schemeSeparator = "://";
   const schemeIndex = urlString.indexOf(schemeSeparator);
   if (schemeIndex === -1) return null;
 
   const restOfString = urlString.substring(schemeIndex + schemeSeparator.length);
   const pathSeparatorIndex = restOfString.indexOf('/');
-  if (pathSeparatorIndex === -1) return null;
+  if (pathSeparatorIndex === -1) return null; // No path separator after tunnel_addr
 
+  // target_addr is between the first '/' and the '?'
   const targetAndQuery = restOfString.substring(pathSeparatorIndex + 1);
   const querySeparatorIndex = targetAndQuery.indexOf('?');
 
   return querySeparatorIndex !== -1 ? targetAndQuery.substring(0, querySeparatorIndex) : targetAndQuery;
 }
 
+// Helper function to split host and port, supports IPv6
 function splitHostPort(address: string | null): [string | null, string | null] {
   if (!address) return [null, null];
   
+  // Check for IPv6 with port: [ipv6_address]:port
   const ipv6WithPortMatch = address.match(/^\[(.+)\]:(\d+)$/);
   if (ipv6WithPortMatch) {
-    return [ipv6WithPortMatch[1], ipv6WithPortMatch[2]];
+    return [ipv6WithPortMatch[1], ipv6WithPortMatch[2]]; // [host, port]
   }
 
+  // For IPv4 or hostname with port: host:port
+  // Find the last colon, which should separate host from port
   const lastColonIndex = address.lastIndexOf(':');
+  // If no colon, or if there's a colon but it's part of an IPv6 address without brackets (less common case but good to handle)
   if (lastColonIndex === -1 || address.substring(0, lastColonIndex).includes(':')) { 
-    return [address, null];
+    return [address, null]; // Assume it's just a host without a port
   }
 
   const potentialHost = address.substring(0, lastColonIndex);
   const potentialPort = address.substring(lastColonIndex + 1);
 
+  // Validate if potentialPort is actually a number
   if (potentialPort && !isNaN(parseInt(potentialPort, 10)) && parseInt(potentialPort, 10).toString() === potentialPort) {
      return [potentialHost, potentialPort];
   }
   
+  // If not a valid port, assume the whole string is the host
   return [address, null];
 }
+
 
 export default function TopologyPage() {
   const router = useRouter();
@@ -110,23 +124,24 @@ export default function TopologyPage() {
     const clientInstancesRaw = allApiInstances.filter(inst => inst.type === 'client');
 
     const S_Nodes: ServerInstanceDetails[] = serverInstancesRaw.map(serverInst => {
-      const serverTunnelAddr = parseTunnelAddr(serverInst.url); 
-      const [serverHostToMatch, serverPortToMatch] = splitHostPort(serverTunnelAddr);
+      const serverTunnelAddrFull = parseTunnelAddr(serverInst.url); 
+      const [serverHostToMatch, serverPortToMatch] = splitHostPort(serverTunnelAddrFull);
       
       const connectedC: ClientInstanceDetails[] = [];
       clientInstancesRaw.forEach(clientInst => {
-        const clientConnectsToServerAddr = parseTunnelAddr(clientInst.url); 
-        if (!clientConnectsToServerAddr) return;
+        const clientConnectsToServerAddrFull = parseTunnelAddr(clientInst.url); 
+        if (!clientConnectsToServerAddrFull) return;
 
-        const [clientHost, clientPort] = splitHostPort(clientConnectsToServerAddr);
+        const [clientHost, clientPort] = splitHostPort(clientConnectsToServerAddrFull);
 
+        // Rule: Client's tunnel_addr connects to Server's tunnel_addr
         if (serverPortToMatch && clientPort && serverPortToMatch === clientPort) {
-          const isServerHostWildcard = serverHostToMatch === '0.0.0.0' || serverHostToMatch === '::' || serverHostToMatch === '';
+          const isServerHostWildcard = serverHostToMatch === '0.0.0.0' || serverHostToMatch === '::' || serverHostToMatch === '' || serverHostToMatch === null;
           
           if (isServerHostWildcard || clientHost === serverHostToMatch) {
             connectedC.push({
               ...clientInst,
-              clientConnectsToServerAddress: clientConnectsToServerAddr,
+              clientConnectsToServerAddress: clientConnectsToServerAddrFull,
               localTargetAddress: parseTargetAddr(clientInst.url), 
             });
           }
@@ -135,8 +150,8 @@ export default function TopologyPage() {
 
       return {
         ...serverInst,
-        serverListeningAddress: serverTunnelAddr,
-        serverForwardsToAddress: parseTargetAddr(serverInst.url), 
+        serverListeningAddress: serverTunnelAddrFull, // This is server's own <tunnel_addr>
+        serverForwardsToAddress: parseTargetAddr(serverInst.url), // This is server's own <target_addr>
         connectedClients: connectedC,
       };
     });
@@ -148,7 +163,7 @@ export default function TopologyPage() {
 
   const fetchDataAndProcess = useCallback(async () => {
     if (isLoadingApiConfig) {
-      setIsLoadingData(false);
+      setIsLoadingData(false); // Ensure loading state is cleared if API config is still loading
       return;
     }
     if (apiConfigsList.length === 0) {
@@ -159,7 +174,7 @@ export default function TopologyPage() {
     }
     
     setIsLoadingData(true);
-    setFetchErrors(new Map()); 
+    setFetchErrors(new Map()); // Clear previous errors
     
     let combinedInstances: InstanceWithApiDetails[] = [];
     let currentErrors = new Map<string, string>();
@@ -186,7 +201,7 @@ export default function TopologyPage() {
     
     setFetchErrors(currentErrors);
     processInstanceData(combinedInstances);
-    setIsLoadingData(false); 
+    setIsLoadingData(false); // Data processing finished
   }, [apiConfigsList, isLoadingApiConfig, getApiRootUrl, getToken, processInstanceData]);
 
   useEffect(() => {
@@ -206,7 +221,7 @@ export default function TopologyPage() {
   }
   
   const globalError = fetchErrors.get("global");
-  if (globalError && !isLoadingData) {
+  if (globalError && !isLoadingData) { // Only show global error if not loading
      return (
       <AppLayout>
         <div className="text-center">
@@ -252,14 +267,14 @@ export default function TopologyPage() {
             </div>
           )}
 
-          {isLoadingData && !isLoadingApiConfig && (
+          {isLoadingData && !isLoadingApiConfig && ( // Show loading spinner if data is being fetched
             <div className="flex justify-center items-center flex-grow py-10">
                 <Loader2 className="h-12 w-12 animate-spin text-primary" />
                 <p className="ml-4 text-lg">加载拓扑数据中...</p>
             </div>
           )}
 
-          {!isLoadingData && processedServers.length === 0 && (
+          {!isLoadingData && processedServers.length === 0 && ( // Show no data message if not loading and no servers
             <Card className="text-center py-10 shadow-lg flex-grow flex flex-col justify-center items-center bg-card">
               <CardHeader><CardTitle>无服务器实例数据</CardTitle></CardHeader>
               <CardContent>
@@ -281,19 +296,19 @@ export default function TopologyPage() {
                       <div className="flex-grow text-left">
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <p className="font-semibold text-lg truncate group-hover:underline" title={`来源: ${server.apiName}\nID: ${server.id}\nURL: ${server.url}`}>
+                            <h3 className="font-semibold text-lg truncate group-hover:underline" title={`来源 API: ${server.apiName}\n服务器实例 ID: ${server.id}\nURL: ${server.url}`}>
                               {server.apiName} 
-                            </p>
+                            </h3>
                           </TooltipTrigger>
                           <TooltipContent side="top" className="max-w-md break-all">
-                            <p>来源: {server.apiName}</p>
-                            <p>ID: {server.id}</p>
+                            <p>来源 API: {server.apiName}</p>
+                            <p>服务器实例 ID: {server.id}</p>
                             <p>URL: {server.url}</p>
                           </TooltipContent>
                         </Tooltip>
-                        <p className="text-xs text-muted-foreground">
-                           ID: {server.id.substring(0,12)}... | 监听: <span className="font-mono">{server.serverListeningAddress || 'N/A'}</span> | 状态: <InstanceStatusBadge status={server.status} />
-                        </p>
+                        <div className="text-xs text-muted-foreground"> {/* Changed P to DIV here */}
+                          ID: {server.id.substring(0,12)}... | 监听: <span className="font-mono">{server.serverListeningAddress || 'N/A'}</span> | 状态: <InstanceStatusBadge status={server.status} />
+                        </div>
                          <p className="text-xs text-muted-foreground">
                            转发至: <span className="font-mono">{server.serverForwardsToAddress || 'N/A'}</span>
                         </p>
@@ -302,7 +317,7 @@ export default function TopologyPage() {
                   </AccordionTrigger>
                   <AccordionContent className="px-4 pb-4 pt-2 border-t border-border/50">
                     {server.connectedClients.length === 0 ? (
-                      <p className="text-sm text-muted-foreground italic py-2">此服务器无连接客户端。</p>
+                      <p className="text-sm text-muted-foreground italic py-2">此服务器实例当前没有连接的客户端。</p>
                     ) : (
                       <div className="space-y-3">
                         <h4 className="text-sm font-semibold text-muted-foreground mb-1">已连接客户端 ({server.connectedClients.length}):</h4>
@@ -315,14 +330,14 @@ export default function TopologyPage() {
                                   <TooltipTrigger asChild>
                                     <div 
                                       className="font-medium text-sm truncate" 
-                                      title={`来源: ${client.apiName}\nID: ${client.id}\nURL: ${client.url}`}
+                                      title={`来源 API: ${client.apiName}\n客户端 ID: ${client.id}\nURL: ${client.url}`}
                                     >
                                       客户端: {client.apiName} <span className="text-muted-foreground text-xs">(ID: {client.id.substring(0,8)}...)</span>
                                     </div>
                                   </TooltipTrigger>
                                   <TooltipContent side="top" className="max-w-md break-all">
-                                    <p>ID: {client.id}</p>
-                                    <p>来源: {client.apiName}</p>
+                                    <p>来源 API: {client.apiName}</p>
+                                    <p>客户端 ID: {client.id}</p>
                                     <p>URL: {client.url}</p>
                                   </TooltipContent>
                                 </Tooltip>
