@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { AlertTriangle, Eye, Trash2, Wand2, ArrowDown, ArrowUp, Server, Smartphone, Search, Pencil } from 'lucide-react';
-import type { Instance, UpdateInstanceRequest } from '@/types/nodepass';
+import type { Instance, UpdateInstanceRequest, NamedApiConfig } from '@/types/nodepass';
 import { InstanceStatusBadge } from './InstanceStatusBadge';
 import { InstanceControls } from './InstanceControls';
 import { DeleteInstanceDialog } from './DeleteInstanceDialog';
@@ -24,7 +24,7 @@ import { ModifyInstanceDialog } from './ModifyInstanceDialog';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { nodePassApi } from '@/lib/api';
-import { useApiConfig } from '@/hooks/use-api-key';
+// Removed: import { useApiConfig } from '@/hooks/use-api-key'; // No longer directly used for activeApiConfig
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 
@@ -36,11 +36,16 @@ function formatBytes(bytes: number) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
+interface InstanceListProps {
+  apiId: string | null;
+  apiName: string | null;
+  apiRoot: string | null;
+  apiToken: string | null;
+}
 
-export function InstanceList() {
+export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceListProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { activeApiConfig, getApiRootUrl, getToken } = useApiConfig();
 
   const [selectedInstanceForDetails, setSelectedInstanceForDetails] = useState<Instance | null>(null);
   const [selectedInstanceForDelete, setSelectedInstanceForDelete] = useState<Instance | null>(null);
@@ -48,36 +53,28 @@ export function InstanceList() {
   const [selectedInstanceForModify, setSelectedInstanceForModify] = useState<Instance | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const activeApiConfigId = activeApiConfig?.id; // Get the ID of the active config
-
   const { data: instances, isLoading: isLoadingInstances, error: instancesError } = useQuery<Instance[], Error>({
-    queryKey: ['instances', activeApiConfigId], // Include activeApiConfigId in the queryKey
+    queryKey: ['instances', apiId],
     queryFn: () => {
-      if (!activeApiConfigId) throw new Error("没有活动的API配置ID。");
-      const apiRoot = getApiRootUrl(activeApiConfigId);
-      const token = getToken(activeApiConfigId);
-      if (!apiRoot || !token) throw new Error("活动API配置不完整或无效。");
-      return nodePassApi.getInstances(apiRoot, token);
+      if (!apiId || !apiRoot || !apiToken) throw new Error("API configuration is incomplete for fetching instances.");
+      return nodePassApi.getInstances(apiRoot, apiToken);
     },
-    enabled: !!activeApiConfigId, // Only fetch if there's an active API config ID
+    enabled: !!apiId && !!apiRoot && !!apiToken,
     refetchInterval: 15000,
   });
 
 
   const updateInstanceMutation = useMutation({
     mutationFn: ({ instanceId, action }: { instanceId: string, action: UpdateInstanceRequest['action']}) => {
-      if (!activeApiConfigId) throw new Error("没有活动的 API 配置。");
-      const apiRoot = getApiRootUrl(activeApiConfigId);
-      const token = getToken(activeApiConfigId);
-      if (!apiRoot || !token) throw new Error("API 配置不可用。");
-      return nodePassApi.updateInstance(instanceId, { action }, apiRoot, token);
+      if (!apiId || !apiRoot || !apiToken) throw new Error("API configuration is incomplete for updating instance.");
+      return nodePassApi.updateInstance(instanceId, { action }, apiRoot, apiToken);
     },
     onSuccess: (data) => {
       toast({
         title: '实例已更新',
         description: `实例 ${data.id} 状态已更改为 ${data.status}。`,
       });
-      queryClient.invalidateQueries({ queryKey: ['instances', activeApiConfigId] });
+      queryClient.invalidateQueries({ queryKey: ['instances', apiId] });
     },
     onError: (error: any) => {
       toast({
@@ -90,18 +87,15 @@ export function InstanceList() {
 
   const deleteInstanceMutation = useMutation({
     mutationFn: (instanceId: string) => {
-      if (!activeApiConfigId) throw new Error("没有活动的 API 配置。");
-      const apiRoot = getApiRootUrl(activeApiConfigId);
-      const token = getToken(activeApiConfigId);
-      if (!apiRoot || !token) throw new Error("API 配置不可用。");
-      return nodePassApi.deleteInstance(instanceId, apiRoot, token);
+      if (!apiId || !apiRoot || !apiToken) throw new Error("API configuration is incomplete for deleting instance.");
+      return nodePassApi.deleteInstance(instanceId, apiRoot, apiToken);
     },
     onSuccess: (_, instanceId) => {
       toast({
         title: '实例已删除',
         description: `实例 ${instanceId} 已删除。`,
       });
-      queryClient.invalidateQueries({ queryKey: ['instances', activeApiConfigId] });
+      queryClient.invalidateQueries({ queryKey: ['instances', apiId] });
       setSelectedInstanceForDelete(null);
     },
     onError: (error: any) => {
@@ -140,7 +134,7 @@ export function InstanceList() {
     <Card className="shadow-lg mt-6">
       <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
         <div>
-          <CardTitle className="text-xl">实例概览 (API: {activeApiConfig?.name || 'N/A'})</CardTitle>
+          <CardTitle className="text-xl">实例概览 (API: {apiName || 'N/A'})</CardTitle>
           <p className="text-sm text-muted-foreground">管理和监控您的 NodePass 实例。</p>
         </div>
         <div className="relative mt-4 sm:mt-0 w-full sm:w-64">
@@ -155,18 +149,18 @@ export function InstanceList() {
         </div>
       </CardHeader>
       <CardContent>
-        {!activeApiConfig && (
+        {!apiId && (
           <div className="text-center py-10 text-muted-foreground">
             请先从顶部设置菜单选择一个活动的 API 连接。
           </div>
         )}
-        {activeApiConfig && instancesError && (
+        {apiId && instancesError && (
           <div className="text-destructive-foreground bg-destructive p-4 rounded-md flex items-center">
             <AlertTriangle className="h-5 w-5 mr-2" />
             加载实例错误: {instancesError.message}
           </div>
         )}
-        {activeApiConfig && !instancesError && (
+        {apiId && !instancesError && (
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -234,7 +228,7 @@ export function InstanceList() {
                   <TableCell colSpan={7} className="text-center h-24">
                     {searchTerm && (!filteredInstances || filteredInstances.length === 0)
                       ? "未找到与您搜索匹配的实例。"
-                      : !activeApiConfigId
+                      : !apiId
                         ? "请先选择一个活动的 API 连接。"
                         : "无可用实例。"
                     }
@@ -270,8 +264,11 @@ export function InstanceList() {
         onOpenChange={(open) => {
           if (!open) setSelectedInstanceForModify(null);
         }}
+        // Pass apiRoot and apiToken for the modify mutation
+        apiRoot={apiRoot}
+        apiToken={apiToken}
+        apiId={apiId}
       />
     </Card>
   );
 }
-

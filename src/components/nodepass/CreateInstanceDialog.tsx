@@ -24,19 +24,22 @@ import type { CreateInstanceRequest } from '@/types/nodepass';
 import { PlusCircle } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { nodePassApi } from '@/lib/api';
-import { useApiConfig } from '@/hooks/use-api-key';
+// Removed: import { useApiConfig } from '@/hooks/use-api-key'; // API details will be passed as props
 
 type CreateInstanceFormValues = z.infer<typeof createInstanceFormSchema>;
 
 interface CreateInstanceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  apiId: string | null;
+  apiRoot: string | null;
+  apiToken: string | null;
+  apiName: string | null;
 }
 
-export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialogProps) {
+export function CreateInstanceDialog({ open, onOpenChange, apiId, apiRoot, apiToken, apiName }: CreateInstanceDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { activeApiConfig, getApiRootUrl, getToken } = useApiConfig();
 
   const form = useForm<CreateInstanceFormValues>({
     resolver: zodResolver(createInstanceFormSchema),
@@ -45,13 +48,12 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
       tunnelAddress: '',
       targetAddress: '',
       logLevel: 'info',
-      tlsMode: '0', // Default for server
+      tlsMode: '0', 
       certPath: '',
       keyPath: '',
     },
   });
 
-  // Reset form when dialog opens/closes or activeApiConfig changes
   React.useEffect(() => {
     if (open) {
       form.reset({
@@ -64,7 +66,7 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
         keyPath: '',
       });
     }
-  }, [open, form, activeApiConfig]);
+  }, [open, form]);
 
 
   const instanceType = form.watch("instanceType");
@@ -72,22 +74,18 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
 
   const createInstanceMutation = useMutation({
     mutationFn: (data: CreateInstanceRequest) => {
-      if (!activeApiConfig) throw new Error("没有活动的 API 配置。");
-      const apiRootUrl = getApiRootUrl(activeApiConfig.id);
-      const token = getToken(activeApiConfig.id);
-      if (!apiRootUrl || !token) throw new Error("API 配置不可用。");
-      // Validate with API schema before sending
+      if (!apiId || !apiRoot || !apiToken) throw new Error("没有活动的或有效的 API 配置用于创建实例。");
       const validatedApiData = createInstanceApiSchema.parse(data);
-      return nodePassApi.createInstance(validatedApiData, apiRootUrl, token);
+      return nodePassApi.createInstance(validatedApiData, apiRoot, apiToken);
     },
     onSuccess: () => {
       toast({
         title: '实例已创建',
         description: '新实例已成功创建。',
       });
-      queryClient.invalidateQueries({ queryKey: ['instances', activeApiConfig?.id] });
+      queryClient.invalidateQueries({ queryKey: ['instances', apiId] }); // Use passed apiId
       form.reset();
-      onOpenChange(false); // Close dialog on success
+      onOpenChange(false);
     },
     onError: (error: any) => {
       toast({
@@ -125,7 +123,7 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
             创建新实例
           </DialogTitle>
           <DialogDescription>
-            提供实例的详细信息以进行配置 (将在当前活动的API配置: {activeApiConfig?.name || 'N/A'} 中创建)。
+            提供实例的详细信息以进行配置 (将在API配置: {apiName || 'N/A'} 中创建)。
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -143,7 +141,7 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
                           form.setValue("certPath", undefined);
                           form.setValue("keyPath", undefined);
                       } else {
-                          form.setValue("tlsMode", "0"); // Default for server
+                          form.setValue("tlsMode", "0"); 
                       }
                   }} defaultValue={field.value}>
                     <FormControl>
@@ -171,6 +169,7 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
                     <Input 
                       placeholder={instanceType === "server" ? "服务器监听的控制通道地址, 例如: 0.0.0.0:10101" : "要连接的 NodePass 服务器隧道地址, 例如: your.server.com:10101"} 
                       {...field}
+                      className="text-sm"
                     />
                   </FormControl>
                   <FormDescription>
@@ -193,6 +192,7 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
                     <Input 
                       placeholder={instanceType === "server" ? "服务器监听的流量转发地址, 例如: 0.0.0.0:8080" : "本地流量转发地址, 例如: 127.0.0.1:8000"} 
                       {...field} 
+                      className="text-sm"
                     />
                   </FormControl>
                    <FormDescription>
@@ -266,6 +266,7 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
                             <Input 
                               placeholder="例如: /path/to/your/cert.pem" 
                               {...field} 
+                              className="text-sm"
                             />
                           </FormControl>
                           <FormMessage />
@@ -282,6 +283,7 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
                             <Input 
                               placeholder="例如: /path/to/your/key.pem" 
                               {...field} 
+                              className="text-sm"
                             />
                           </FormControl>
                           <FormMessage />
@@ -300,7 +302,7 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
               取消
             </Button>
           </DialogClose>
-          <Button type="submit" onClick={form.handleSubmit(onSubmit)} disabled={createInstanceMutation.isPending || !activeApiConfig}>
+          <Button type="submit" onClick={form.handleSubmit(onSubmit)} disabled={createInstanceMutation.isPending || !apiId}>
             {createInstanceMutation.isPending ? '创建中...' : '创建实例'}
           </Button>
         </DialogFooter>

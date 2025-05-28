@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { AppLayout } from '@/components/layout/AppLayout'; // Import AppLayout
+import { AppLayout } from '@/components/layout/AppLayout';
 import { ApiConfigDialog } from '@/components/nodepass/ApiKeyDialog';
 import { CreateInstanceDialog } from '@/components/nodepass/CreateInstanceDialog';
 import { InstanceList } from '@/components/nodepass/InstanceList';
@@ -18,13 +18,13 @@ export default function HomePage() {
     activeApiConfig, 
     apiConfigsList,
     addOrUpdateApiConfig, 
-    // clearActiveApiConfig, // Handled by AppLayout's Header
     isLoading: isLoadingApiConfig,
-    setActiveApiConfigId 
+    setActiveApiConfigId,
+    getApiRootUrl, // Added
+    getToken       // Added
   } = useApiConfig();
   const { toast } = useToast();
   
-  // This dialog state is specific to HomePage for initial setup if no configs exist
   const [isApiConfigDialogOpenForSetup, setIsApiConfigDialogOpenForSetup] = useState(false);
   const [editingApiConfigForSetup, setEditingApiConfigForSetup] = useState<NamedApiConfig | null>(null);
 
@@ -48,12 +48,14 @@ export default function HomePage() {
     });
   };
   
-  // This function is specifically for the "Add API Connection" button on this page when no active config
   const handleOpenApiConfigDialogForSetup = () => {
     setEditingApiConfigForSetup(null);
     setIsApiConfigDialogOpenForSetup(true);
   };
 
+  // Derive apiRoot and token for the active config
+  const currentApiRoot = activeApiConfig ? getApiRootUrl(activeApiConfig.id) : null;
+  const currentToken = activeApiConfig ? getToken(activeApiConfig.id) : null;
 
   if (isLoadingApiConfig) {
     return (
@@ -71,17 +73,27 @@ export default function HomePage() {
         {activeApiConfig ? (
           <div className="space-y-8">
             <div className="text-right">
-              <Button onClick={() => setIsCreateInstanceDialogOpen(true)}>
+              <Button onClick={() => setIsCreateInstanceDialogOpen(true)} disabled={!currentApiRoot || !currentToken}>
                 <PlusCircle className="mr-2 h-5 w-5" />
                 创建新实例
               </Button>
             </div>
-            {/* Add key prop to InstanceList based on activeApiConfig.id */}
-            <InstanceList key={activeApiConfig.id} />
-            <EventLog />
+            <InstanceList 
+              key={activeApiConfig.id} 
+              apiId={activeApiConfig.id}
+              apiName={activeApiConfig.name}
+              apiRoot={currentApiRoot}
+              apiToken={currentToken}
+            />
+            <EventLog 
+              apiId={activeApiConfig.id}
+              apiRoot={currentApiRoot}
+              apiToken={currentToken}
+              apiName={activeApiConfig.name}
+            />
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center text-center h-[calc(100vh-10rem-4rem)]"> {/* Adjust height considering header/footer in AppLayout */}
+          <div className="flex flex-col items-center justify-center text-center h-[calc(100vh-10rem-4rem)]">
             <h2 className="text-2xl font-semibold mb-4">
               {apiConfigsList.length > 0 ? '未选择 API 连接' : '需要 API 连接'}
             </h2>
@@ -102,7 +114,6 @@ export default function HomePage() {
             )}
           </div>
         )}
-      {/* This ApiConfigDialog is for the initial setup if no configs exist */}
       <ApiConfigDialog
         open={isApiConfigDialogOpenForSetup}
         onOpenChange={setIsApiConfigDialogOpenForSetup}
@@ -113,6 +124,11 @@ export default function HomePage() {
       <CreateInstanceDialog
         open={isCreateInstanceDialogOpen}
         onOpenChange={setIsCreateInstanceDialogOpen}
+        // Pass current API details for instance creation
+        apiId={activeApiConfig?.id || null}
+        apiRoot={currentApiRoot}
+        apiToken={currentToken}
+        apiName={activeApiConfig?.name || null}
       />
     </AppLayout>
   );

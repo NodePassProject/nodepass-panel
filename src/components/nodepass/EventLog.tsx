@@ -7,17 +7,24 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Rss } from 'lucide-react';
 import type { InstanceEvent } from '@/types/nodepass';
-import { useApiConfig } from '@/hooks/use-api-key';
-import { getEventsUrl } from '@/lib/api'; // Ensure this function is correctly defined
+// Removed: import { useApiConfig } from '@/hooks/use-api-key'; // API details will be passed as props
+import { getEventsUrl } from '@/lib/api';
 
-export function EventLog() {
+interface EventLogProps {
+  apiId: string | null;
+  apiRoot: string | null;
+  apiToken: string | null;
+  apiName: string | null;
+}
+
+export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
   const [events, setEvents] = useState<InstanceEvent[]>([]);
-  const { activeApiConfig, getApiRootUrl, getToken } = useApiConfig();
   const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    if (!activeApiConfig) {
-      setEvents([{ type: 'log', data: 'API 连接未激活。事件流已禁用。', timestamp: new Date().toISOString() }]);
+    if (!apiId || !apiRoot) { // Token might be optional or handled by server if direct connection is allowed
+      const reason = !apiId ? "API 连接未激活" : "活动 API 配置的 URL 无效";
+      setEvents([{ type: 'log', data: `${reason}。事件流已禁用。`, timestamp: new Date().toISOString() }]);
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
@@ -25,28 +32,9 @@ export function EventLog() {
       return;
     }
     
-    // Use activeApiConfig.id to get specific URL and token
-    const apiRoot = getApiRootUrl(activeApiConfig.id); 
-    const token = getToken(activeApiConfig.id); // Get token for the active config
+    const directEventsUrl = getEventsUrl(apiRoot); // This now returns the /v1/events URL
 
-    if (!apiRoot) { // Token might be optional depending on server config for events
-      setEvents([{ type: 'log', data: '活动 API 配置的 URL 无效。事件流已禁用。', timestamp: new Date().toISOString() }]);
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
-      return;
-    }
-
-    // Construct the events URL. If your server supports token in query for EventSource:
-    // const directEventsUrl = `${getEventsUrl(apiRoot)}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
-    // If your server does NOT support token in query (relies on X-API-Key which EventSource can't send, or cookies):
-    const directEventsUrl = getEventsUrl(apiRoot);
-
-
-    const initialMessage = token 
-      ? `正在直接初始化事件流到 ${directEventsUrl}... (注意：EventSource 无法发送 X-API-Key 进行认证，如果服务器需要，认证可能依赖其他方式如 Cookie 或已支持的查询参数。)`
-      : `正在直接初始化事件流到 ${directEventsUrl}... (未提供令牌。如果服务器需要认证，连接可能会失败或受限。)`;
+    const initialMessage = `正在直接初始化事件流到 ${directEventsUrl}... (注意：EventSource 无法发送 X-API-Key 进行认证，如果服务器需要，认证可能会失败或依赖其他机制如 Cookie。)`;
     
     setEvents([{ type: 'log', data: initialMessage, timestamp: new Date().toISOString() }]);
     
@@ -54,8 +42,6 @@ export function EventLog() {
       eventSourceRef.current.close();
     }
 
-    // For EventSource, the URL must be absolute.
-    // If getEventsUrl does not return an absolute URL, or if 'token' needs to be passed differently, adjust here.
     const newEventSource = new EventSource(directEventsUrl.toString());
     eventSourceRef.current = newEventSource;
 
@@ -72,7 +58,7 @@ export function EventLog() {
 
         switch (serverEventPayload.type) {
           case 'initial':
-            frontendEventType = 'instance_created';
+            frontendEventType = 'instance_created'; // Or 'instance_updated' if it's about existing instances
             frontendEventData = serverEventPayload.instance;
             break;
           case 'update':
@@ -81,15 +67,18 @@ export function EventLog() {
             break;
           case 'delete':
             frontendEventType = 'instance_deleted';
-            frontendEventData = serverEventPayload.instance;
+            frontendEventData = serverEventPayload.instance; // server sends instance details on delete
             break;
           case 'log':
             frontendEventType = 'log';
+            // Assuming serverEventPayload.logs contains the log string
+            // and serverEventPayload.instance might contain the source instance
             frontendEventData = `[实例ID: ${serverEventPayload.instance?.id || 'N/A'}] ${serverEventPayload.logs}`;
             break;
           default:
             console.warn("未知服务器事件类型:", serverEventPayload.type, serverEventPayload);
-            frontendEventType = 'log'; 
+            frontendEventType = 'log'; // Fallback to log type
+            // Safely stringify, ensuring data field is captured if it's the primary payload
             frontendEventData = `未知事件 ${serverEventPayload.type}: ${JSON.stringify(serverEventPayload.data || serverEventPayload)}`;
             break;
         }
@@ -97,7 +86,7 @@ export function EventLog() {
         const newEventToLog: InstanceEvent = {
           type: frontendEventType,
           data: frontendEventData,
-          timestamp: serverEventPayload.time || new Date().toISOString(),
+          timestamp: serverEventPayload.time || new Date().toISOString(), // Use server time if available
         };
         setEvents((prevEvents) => [newEventToLog, ...prevEvents.slice(0, 99)]);
       } catch (error) {
@@ -108,6 +97,7 @@ export function EventLog() {
     });
     
     newEventSource.onmessage = (event) => {
+        // This handles unnamed events, if any.
         console.log("收到通用 SSE 消息 (非 'instance' 事件):", event.data);
         const genericEvent: InstanceEvent = {
           type: 'log',
@@ -130,16 +120,21 @@ export function EventLog() {
       if (newEventSource.readyState === EventSource.CLOSED) {
         errorMessage = 'EventSource 连接已关闭。可能由于服务器端认证失败或网络问题。';
       } else if (newEventSource.readyState === EventSource.CONNECTING) {
+        // Still trying to connect, don't flood logs with "connecting" state as error.
         return; 
       }
 
       const errorEventLog: InstanceEvent = { type: 'log', data: errorMessage, timestamp: new Date().toISOString() };
+      // Avoid duplicate consecutive error messages
       setEvents((prevEvents) => {
         if (prevEvents.length > 0 && prevEvents[0].data === errorMessage && prevEvents[0].type === 'log') {
           return prevEvents;
         }
         return [errorEventLog, ...prevEvents.slice(0, 99)];
       });
+      // Consider closing the EventSource here if the error is fatal and non-recoverable,
+      // or implement a retry mechanism with backoff if appropriate.
+      // For now, we let it try to reconnect as per default EventSource behavior.
     };
 
     return () => {
@@ -148,8 +143,7 @@ export function EventLog() {
       }
       eventSourceRef.current = null;
     };
-  // Ensure effect re-runs if the active API config (and thus its ID, URL, or token) changes.
-  }, [activeApiConfig, getApiRootUrl, getToken]); 
+  }, [apiId, apiRoot, apiToken]); // apiToken isn't directly used by EventSource, but signals re-init if config changes
 
   const getBadgeText = (type: InstanceEvent['type']): string => {
     if (type.includes('created')) return '已创建';
@@ -166,7 +160,7 @@ export function EventLog() {
           实时事件日志
         </CardTitle>
         <CardDescription>
-          来自 NodePass 实例的实时更新 (直接连接到 {activeApiConfig?.name || 'N/A'})。
+          来自 NodePass 实例的实时更新 (API: {apiName || 'N/A'}，直接连接)。
         </CardDescription>
       </CardHeader>
       <CardContent>
