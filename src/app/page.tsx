@@ -4,11 +4,11 @@
 import React, { useState, useEffect } from 'react';
 import { Header } from '@/components/layout/Header';
 import { ApiConfigDialog } from '@/components/nodepass/ApiKeyDialog';
-import { CreateInstanceCard } from '@/components/nodepass/CreateInstanceCard';
+import { CreateInstanceDialog } from '@/components/nodepass/CreateInstanceDialog'; // Updated import
 import { InstanceList } from '@/components/nodepass/InstanceList';
 import { EventLog } from '@/components/nodepass/EventLog';
 import { useApiConfig, type NamedApiConfig } from '@/hooks/use-api-key';
-import { Loader2 } from 'lucide-react';
+import { Loader2, PlusCircle } from 'lucide-react'; // Added PlusCircle
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 
@@ -26,6 +26,7 @@ export default function HomePage() {
   
   const [isApiConfigDialogOpen, setIsApiConfigDialogOpen] = useState(false);
   const [editingApiConfig, setEditingApiConfig] = useState<NamedApiConfig | null>(null);
+  const [isCreateInstanceDialogOpen, setIsCreateInstanceDialogOpen] = useState(false); // State for new dialog
 
   useEffect(() => {
     if (!isLoadingApiConfig && apiConfigsList.length === 0 && !activeApiConfig) {
@@ -84,8 +85,12 @@ export default function HomePage() {
       <main className="flex-grow container mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {activeApiConfig ? (
           <div className="space-y-8">
-            <CreateInstanceCard />
-            {/* <BatchCreateInstancesCard /> Removed */}
+            <div className="text-right">
+              <Button onClick={() => setIsCreateInstanceDialogOpen(true)}>
+                <PlusCircle className="mr-2 h-5 w-5" />
+                创建新实例
+              </Button>
+            </div>
             <InstanceList />
             <EventLog />
           </div>
@@ -118,6 +123,10 @@ export default function HomePage() {
         onSave={handleSaveApiConfig}
         currentConfig={editingApiConfig}
         isEditing={!!editingApiConfig}
+      />
+      <CreateInstanceDialog
+        open={isCreateInstanceDialogOpen}
+        onOpenChange={setIsCreateInstanceDialogOpen}
       />
       <footer className="py-6 text-center text-sm text-muted-foreground border-t">
         NodePass 管理器 &copy; {new Date().getFullYear()}
