@@ -11,7 +11,6 @@ import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Badge } from '@/components/ui/badge';
 import { AppLayout } from '@/components/layout/AppLayout';
 
 interface InstanceWithApiDetails extends Instance {
@@ -109,8 +108,8 @@ export default function TopologyPage() {
     const clientInstancesRaw = allApiInstances.filter(inst => inst.type === 'client');
 
     const S_Nodes: ServerInstanceDetails[] = serverInstancesRaw.map(serverInst => {
-      const serverListeningAddr = parseTunnelAddr(serverInst.url); 
-      const [serverHostToMatch, serverPortToMatch] = splitHostPort(serverListeningAddr);
+      const serverTunnelAddr = parseTunnelAddr(serverInst.url); 
+      const [serverHostToMatch, serverPortToMatch] = splitHostPort(serverTunnelAddr);
       
       const connectedC: ClientInstanceDetails[] = [];
       clientInstancesRaw.forEach(clientInst => {
@@ -134,7 +133,7 @@ export default function TopologyPage() {
 
       return {
         ...serverInst,
-        serverListeningAddress: serverListeningAddr,
+        serverListeningAddress: serverTunnelAddr,
         serverForwardsToAddress: parseTargetAddr(serverInst.url), 
         connectedClients: connectedC,
       };
@@ -286,7 +285,7 @@ export default function TopologyPage() {
                       <div className="flex-grow text-left">
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <p className="font-semibold text-lg truncate group-hover:underline" title={`${server.apiName} (ID: ${server.id})`}>
+                            <p className="font-semibold text-lg truncate group-hover:underline" title={`${server.apiName} (服务器实例 ID: ${server.id})`}>
                               {server.apiName} 
                             </p>
                           </TooltipTrigger>
@@ -297,7 +296,7 @@ export default function TopologyPage() {
                           </TooltipContent>
                         </Tooltip>
                         <p className="text-xs text-muted-foreground">
-                          服务器 ID: {server.id.substring(0,12)}... | 监听: <span className="font-mono">{server.serverListeningAddress || 'N/A'}</span> | 状态: {renderInstanceStatus(server.status)}
+                           服务器 ID: {server.id.substring(0,12)}... | 监听: <span className="font-mono">{server.serverListeningAddress || 'N/A'}</span> | 状态: {renderInstanceStatus(server.status)}
                         </p>
                          <p className="text-xs text-muted-foreground">
                            目标转发: <span className="font-mono">{server.serverForwardsToAddress || 'N/A'}</span>
@@ -318,12 +317,18 @@ export default function TopologyPage() {
                               <div className="flex-grow">
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <div className="font-medium text-sm truncate" title={client.id}> {/* Changed from p to div */}
-                                      客户端: {client.id.substring(0,12)}...
-                                      <Badge variant="secondary" className="text-xs ml-2 py-0.5 px-1.5 scale-90 origin-left whitespace-nowrap">API: {client.apiName}</Badge>
+                                    <div 
+                                      className="font-medium text-sm truncate" 
+                                      title={`来源 API: ${client.apiName}\n客户端 ID: ${client.id}\nURL: ${client.url}`}
+                                    >
+                                      客户端: {client.apiName} <span className="text-muted-foreground text-xs">(ID: {client.id.substring(0,8)}...)</span>
                                     </div>
                                   </TooltipTrigger>
-                                  <TooltipContent side="top" className="max-w-md break-all"><p>ID: {client.id}</p><p>URL: {client.url}</p><p>来源API: {client.apiName}</p></TooltipContent>
+                                  <TooltipContent side="top" className="max-w-md break-all">
+                                    <p>客户端 ID: {client.id}</p>
+                                    <p>来源 API: {client.apiName}</p>
+                                    <p>URL: {client.url}</p>
+                                  </TooltipContent>
                                 </Tooltip>
                                 <p className="text-xs text-muted-foreground">
                                   连接到: <span className="font-mono">{client.clientConnectsToServerAddress || 'N/A'}</span> ({renderInstanceStatus(client.status)})
@@ -361,4 +366,3 @@ export default function TopologyPage() {
   );
 }
     
-
