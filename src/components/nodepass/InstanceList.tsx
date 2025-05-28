@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { AlertTriangle, Eye, Trash2, Wand2, ArrowDown, ArrowUp, Server, Smartphone, Search, Pencil } from 'lucide-react';
-import type { Instance, UpdateInstanceRequest, NamedApiConfig } from '@/types/nodepass';
+import type { Instance, UpdateInstanceRequest } from '@/types/nodepass';
 import { InstanceStatusBadge } from './InstanceStatusBadge';
 import { InstanceControls } from './InstanceControls';
 import { DeleteInstanceDialog } from './DeleteInstanceDialog';
@@ -24,7 +24,6 @@ import { ModifyInstanceDialog } from './ModifyInstanceDialog';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { nodePassApi } from '@/lib/api';
-// Removed: import { useApiConfig } from '@/hooks/use-api-key'; // No longer directly used for activeApiConfig
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 
@@ -181,7 +180,7 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
                   <TableRow key={instance.id}>
                     <TableCell className="font-medium truncate max-w-xs">{instance.id}</TableCell>
                     <TableCell>
-                      <Badge variant={instance.type === 'server' ? 'outline' : 'secondary'} className="capitalize items-center">
+                      <Badge variant={instance.type === 'server' ? 'outline' : 'secondary'} className="capitalize items-center whitespace-nowrap">
                         {instance.type === 'server' ? <Server className="h-3 w-3 mr-1" /> : <Smartphone className="h-3 w-3 mr-1" />}
                         {instance.type === 'server' ? '服务器' : '客户端'}
                       </Badge>
@@ -228,9 +227,11 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
                   <TableCell colSpan={7} className="text-center h-24">
                     {searchTerm && (!filteredInstances || filteredInstances.length === 0)
                       ? "未找到与您搜索匹配的实例。"
-                      : !apiId
+                      : !apiId && !isLoadingInstances // Check !isLoadingInstances here
                         ? "请先选择一个活动的 API 连接。"
-                        : "无可用实例。"
+                        : isLoadingInstances // If still loading, show loading message
+                          ? "加载实例中..."
+                          : "无可用实例。" // Default if not loading and no other condition met
                     }
                   </TableCell>
                 </TableRow>
@@ -264,10 +265,10 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
         onOpenChange={(open) => {
           if (!open) setSelectedInstanceForModify(null);
         }}
-        // Pass apiRoot and apiToken for the modify mutation
         apiRoot={apiRoot}
         apiToken={apiToken}
         apiId={apiId}
+        apiName={apiName}
       />
     </Card>
   );
