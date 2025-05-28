@@ -32,32 +32,26 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
     }
 
     if (!apiId || !apiRoot || !apiToken || !apiName) {
-      const reason = !apiId ? "API 连接未激活或ID无效" : !apiRoot ? "活动 API 配置的 URL 无效" : "活动 API 配置的名称无效";
       setEvents([{ type: 'log', data: `API 配置无效，事件流禁用。`, timestamp: new Date().toISOString() }]);
       return;
     }
 
-    const directEventsUrl = getEventsUrl(apiRoot); 
+    const actualApiEventsUrl = getEventsUrl(apiRoot); 
+    const proxyEventSourceUrl = `/api/events-proxy?targetUrl=${encodeURIComponent(actualApiEventsUrl)}&token=${encodeURIComponent(apiToken)}`;
     
-    setEvents([{ type: 'log', data: `正在直接初始化事件流到 ${directEventsUrl}... (注意：EventSource 无法发送 X-API-Key 进行认证，如果服务器需要，可能会失败)`, timestamp: new Date().toISOString() }]);
+    setEvents([{ type: 'log', data: `正在通过代理 ${proxyEventSourceUrl.split('?')[0]} 初始化事件流...`, timestamp: new Date().toISOString() }]);
     
-    const newEventSource = new EventSource(directEventsUrl); 
+    const newEventSource = new EventSource(proxyEventSourceUrl); 
     eventSourceRef.current = newEventSource;
-    const currentEffectEventSource = newEventSource; // Capture for closure
+    const currentEffectEventSource = newEventSource; 
 
     newEventSource.onopen = () => {
-      if (eventSourceRef.current !== currentEffectEventSource) return; // Stale closure check
-      setEvents((prevEvents) => {
-         // Clear previous non-error messages or only keep the latest system messages
-        const systemMessages = prevEvents.filter(e => e.data.startsWith("正在直接初始化事件流到") || e.data.startsWith("EventSource"));
-        const otherMessages = prevEvents.filter(e => !systemMessages.includes(e) && e.type !== 'log'); // Keep non-log events
-
-        return [
-          { type: 'log', data: `事件流已连接，等待事件... (目标: ${directEventsUrl})`, timestamp: new Date().toISOString() },
-          ...otherMessages, // Keep older non-log events
-          ...(systemMessages.length > 0 ? [systemMessages[systemMessages.length-1]] : []) // Keep latest system message if any
-        ].slice(0, 100);
-      });
+      if (eventSourceRef.current !== currentEffectEventSource) return; 
+      const existingMessages = events.filter(e => e.type === 'log' && !e.data.startsWith("正在通过代理"));
+      setEvents([
+        { type: 'log', data: `事件流已通过代理连接。等待事件... (目标: ${actualApiEventsUrl})`, timestamp: new Date().toISOString() },
+        ...existingMessages
+      ].slice(0,100));
     };
 
     newEventSource.addEventListener('instance', (event) => {
@@ -88,9 +82,10 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
           case 'log':
             frontendEventType = 'log';
             instanceDetailsPayload = serverEventPayload.instance; 
-            frontendEventData = serverEventPayload.logs || `[实例ID: ${serverEventPayload.instance?.id?.substring(0,8) || 'N/A'}] 未知日志内容`;
             if (serverEventPayload.instance && serverEventPayload.logs) {
                  frontendEventData = `[${serverEventPayload.instance.id.substring(0,8)}] ${serverEventPayload.logs}`;
+            } else {
+                frontendEventData = serverEventPayload.logs || `[实例ID: ${serverEventPayload.instance?.id?.substring(0,8) || 'N/A'}] 未知日志内容`;
             }
             break;
           default:
@@ -133,14 +128,14 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       let uiErrorMessage: string;
 
       if (rs === EventSource.CONNECTING) { 
-        uiErrorMessage = `EventSource 连接出错。检查网络、服务器 (${directEventsUrl}) 日志及认证方式。`;
+        uiErrorMessage = `EventSource (代理) 连接出错。检查网络、代理 (${proxyEventSourceUrl.split('?')[0]}) 及目标服务器 (${actualApiEventsUrl}) 日志。`;
       } else if (rs === EventSource.CLOSED) { 
-        uiErrorMessage = `EventSource 连接已关闭。直接连接可能因服务器需 X-API-Key (EventSource无法发送) 或其他问题。检查服务器 (${directEventsUrl}) 日志。`;
+        uiErrorMessage = `EventSource (代理) 连接已关闭。检查代理 (${proxyEventSourceUrl.split('?')[0]}) 及目标服务器 (${actualApiEventsUrl}) 日志。`;
       } else { 
-        uiErrorMessage = `EventSource 未知连接错误 (状态: ${rs})。检查服务器 (${directEventsUrl}) 日志。`;
+        uiErrorMessage = `EventSource (代理) 未知连接错误 (状态: ${rs})。检查代理及目标服务器日志。`;
       }
       
-      console.error(uiErrorMessage); 
+      console.error(uiErrorMessage);
       
       const errorEventLog: InstanceEvent = { type: 'log', data: uiErrorMessage, timestamp: new Date().toISOString() };
       setEvents((prevEvents) => {
@@ -164,7 +159,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
 
   const getBadgeTextAndVariant = (type: InstanceEvent['type']): { text: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' | 'accent' } => {
     if (type.includes('created')) return { text: '已创建', variant: 'default' };
-    if (type.includes('updated')) return { text: '已更新', variant: 'secondary' };
+    if (type.includes('updated')) return { text: 'secondary', variant: 'secondary' }; // Changed '已更新' to 'secondary' as per typical badge variants
     if (type.includes('deleted')) return { text: '已删除', variant: 'destructive' };
     return { text: '日志', variant: 'outline' };
   }
@@ -184,7 +179,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
           实时事件日志
         </CardTitle>
         <CardDescription>
-          NodePass 实例实时更新 (API: {apiName || 'N/A'}，直接连接)。
+          NodePass 实例实时更新 (API: {apiName || 'N/A'}，通过代理连接)。
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -216,7 +211,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
                     )}
                   </div>
                   <Badge variant={badgeVariant} className="py-0.5 px-1.5 shadow-sm whitespace-nowrap">
-                    {badgeText}
+                    {badgeText === 'secondary' ? '已更新' : badgeText} 
                   </Badge>
                   <div className="flex-grow min-w-0">
                     {event.type !== 'log' && instance ? (
