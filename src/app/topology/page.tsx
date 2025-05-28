@@ -5,10 +5,10 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useApiConfig } from '@/hooks/use-api-key';
 import { nodePassApi } from '@/lib/api';
 import type { Instance } from '@/types/nodepass';
-import { AlertTriangle, Loader2, RefreshCw, Info, ServerIcon, SmartphoneIcon, NetworkIcon, ArrowRightLeft } from 'lucide-react';
+import { AlertTriangle, Loader2, RefreshCw, Info, ServerIcon, SmartphoneIcon, ArrowRightLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'; // CardDescription removed as it's not used for server cards anymore
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from '@/components/ui/badge';
@@ -26,7 +26,7 @@ interface ClientInstanceDetails extends InstanceWithApiDetails {
 
 interface ServerInstanceDetails extends InstanceWithApiDetails {
   serverListeningAddress: string | null; // Address server listens on for control channel (parsed tunnel_addr from server URL)
-  serverForwardsToAddress: string | null; // Address server forwards traffic to (parsed target_addr from server URL) - for matching with client's tunnel_addr if that's the logic
+  serverForwardsToAddress: string | null; // Address server forwards traffic to (parsed target_addr from server URL)
   connectedClients: ClientInstanceDetails[];
 }
 
@@ -34,8 +34,8 @@ interface ServerInstanceDetails extends InstanceWithApiDetails {
 // For client: server it connects to. For server: address it listens on for control.
 function parseTunnelAddr(urlString: string): string | null {
   try {
-    const url = new URL(urlString); // Handles user:pass@host:port automatically
-    return url.host; // Extracts 'hostname:port' or 'hostname'
+    const url = new URL(urlString); 
+    return url.host; 
   } catch (e) {
     const schemeSeparator = "://";
     const schemeIndex = urlString.indexOf(schemeSeparator);
@@ -61,7 +61,7 @@ function parseTunnelAddr(urlString: string): string | null {
 
 // Parses .../<target_addr>?...
 // For client: local forwarding address ("落地node")
-// For server: target address for traffic forwarding (used for matching logic now)
+// For server: target address for traffic forwarding
 function parseTargetAddr(urlString: string): string | null {
   const schemeSeparator = "://";
   const schemeIndex = urlString.indexOf(schemeSeparator);
@@ -86,7 +86,7 @@ function splitHostPort(address: string | null): [string | null, string | null] {
   }
 
   const lastColonIndex = address.lastIndexOf(':');
-  if (lastColonIndex === -1 || address.substring(0, lastColonIndex).includes(':')) { // No colon, or it's an IPv6 without port
+  if (lastColonIndex === -1 || address.substring(0, lastColonIndex).includes(':')) { 
     return [address, null];
   }
 
@@ -97,7 +97,7 @@ function splitHostPort(address: string | null): [string | null, string | null] {
      return [potentialHost, potentialPort];
   }
   
-  return [address, null]; // No valid port found
+  return [address, null];
 }
 
 export default function TopologyPage() {
@@ -114,24 +114,27 @@ export default function TopologyPage() {
     const clientInstancesRaw = allApiInstances.filter(inst => inst.type === 'client');
 
     const S_Nodes: ServerInstanceDetails[] = serverInstancesRaw.map(serverInst => {
-      const serverTargetAddr = parseTargetAddr(serverInst.url); // Server's <target_addr>
-      const [serverTargetHost, serverTargetPort] = splitHostPort(serverTargetAddr);
+      // Server's <tunnel_addr> (control channel listening address)
+      const serverListeningAddr = parseTunnelAddr(serverInst.url); 
+      const [serverHostToMatch, serverPortToMatch] = splitHostPort(serverListeningAddr);
       
       const connectedC: ClientInstanceDetails[] = [];
       clientInstancesRaw.forEach(clientInst => {
-        const clientTunnelAddr = parseTunnelAddr(clientInst.url); // Client's <tunnel_addr>
-        if (!clientTunnelAddr) return;
+        // Client's <tunnel_addr> (server address client connects to)
+        const clientConnectsToServerAddr = parseTunnelAddr(clientInst.url); 
+        if (!clientConnectsToServerAddr) return;
 
-        const [clientTunnelHost, clientTunnelPort] = splitHostPort(clientTunnelAddr);
+        const [clientHost, clientPort] = splitHostPort(clientConnectsToServerAddr);
 
-        // Match based on: Server's <target_addr> == Client's <tunnel_addr>
-        if (serverTargetPort === clientTunnelPort) {
-          const isServerHostWildcard = serverTargetHost === '0.0.0.0' || serverTargetHost === '::' || serverTargetHost === '';
+        // Match based on: Server's <tunnel_addr> port == Client's <tunnel_addr> port
+        // AND (Server's <tunnel_addr> host is wildcard OR Server's <tunnel_addr> host == Client's <tunnel_addr> host)
+        if (serverPortToMatch === clientPort) {
+          const isServerHostWildcard = serverHostToMatch === '0.0.0.0' || serverHostToMatch === '::' || serverHostToMatch === '';
           
-          if (isServerHostWildcard || clientTunnelHost === serverTargetHost) {
+          if (isServerHostWildcard || clientHost === serverHostToMatch) {
             connectedC.push({
               ...clientInst,
-              clientConnectsToServerAddress: clientTunnelAddr,
+              clientConnectsToServerAddress: clientConnectsToServerAddr,
               localTargetAddress: parseTargetAddr(clientInst.url), 
             });
           }
@@ -140,15 +143,16 @@ export default function TopologyPage() {
 
       return {
         ...serverInst,
-        serverListeningAddress: parseTunnelAddr(serverInst.url), // Keep for display
-        serverForwardsToAddress: serverTargetAddr, // Keep for display/debug
+        serverListeningAddress: serverListeningAddr, // For display "监听"
+        serverForwardsToAddress: parseTargetAddr(serverInst.url), // For display "目标转发"
         connectedClients: connectedC,
       };
     });
     
     setProcessedServers(S_Nodes);
     setLastRefreshed(new Date());
-  }, []);
+  }, []); // Dependencies intentionally empty as helper functions are stable.
+
 
   const fetchDataAndProcess = useCallback(async () => {
     if (isLoadingApiConfig) {
@@ -274,7 +278,7 @@ export default function TopologyPage() {
               <CardHeader><CardTitle>无服务器实例数据</CardTitle></CardHeader>
               <CardContent>
                 <p className="text-muted-foreground">
-                  {apiConfigsList.length > 0 ? "未找到任何服务器实例。" : "请先配置API连接。"}
+                  {apiConfigsList.length > 0 ? "未找到任何服务器实例，或没有客户端连接到它们。" : "请先配置API连接。"}
                 </p>
                 {fetchErrors.size > 0 && <p className="text-muted-foreground mt-2">部分API配置加载失败，可能影响结果。</p>}
               </CardContent>
@@ -291,7 +295,7 @@ export default function TopologyPage() {
                       <div className="flex-grow text-left">
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <p className="font-semibold text-lg truncate" title={`${server.apiName} (ID: ${server.id})`}>
+                            <p className="font-semibold text-lg truncate group-hover:underline" title={`${server.apiName} (ID: ${server.id})`}>
                               {server.apiName} {/* Main display name is now apiName */}
                             </p>
                           </TooltipTrigger>
@@ -308,7 +312,6 @@ export default function TopologyPage() {
                            目标转发: <span className="font-mono">{server.serverForwardsToAddress || 'N/A'}</span>
                         </p>
                       </div>
-                      {/* Badge for API name removed as it's now the main title */}
                     </div>
                   </AccordionTrigger>
                   <AccordionContent className="px-4 pb-4 pt-2 border-t border-border/50">
@@ -357,7 +360,7 @@ export default function TopologyPage() {
             <ul className="list-disc list-inside space-y-1.5 pl-1">
               <li>此视图显示从所有已配置的API源聚合的服务器实例。</li>
               <li>展开服务器实例可查看连接到该服务器的客户端实例。</li>
-              <li>连接关系基于客户端URL中的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> (客户端连接的目标服务器地址) 与服务器URL中的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;target_addr&gt;</code> (服务器的目标转发地址) 的匹配。端口号必须匹配，且如果服务器的目标转发地址不是通配符(如 0.0.0.0 或 [::])，则主机地址也必须匹配。</li>
+              <li>连接关系基于客户端URL中的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> (客户端连接的目标服务器地址) 与服务器URL中的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> (服务器监听的控制通道地址) 的匹配。端口号必须匹配，且如果服务器的监听地址不是通配符(如 0.0.0.0 或 [::])，则主机地址也必须匹配。</li>
               <li>客户端的 "落地Node" 是从其URL的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;target_addr&gt;</code> 解析的。</li>
             </ul>
           </div>
@@ -366,5 +369,4 @@ export default function TopologyPage() {
     </AppLayout>
   );
 }
-
     
