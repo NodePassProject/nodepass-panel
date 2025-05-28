@@ -5,9 +5,17 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useApiConfig, type NamedApiConfig } from '@/hooks/use-api-key';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'; // Card used for empty state
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { ApiConfigDialog } from '@/components/nodepass/ApiKeyDialog';
-import { PlusCircle, Edit3, Trash2, CheckCircle, Power } from 'lucide-react';
+import { PlusCircle, Edit3, Trash2, Power, CheckCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -20,7 +28,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { AppLayout } from '@/components/layout/AppLayout'; // Import AppLayout
+import { AppLayout } from '@/components/layout/AppLayout';
 
 export default function ConnectionsPage() {
   const router = useRouter();
@@ -46,7 +54,6 @@ export default function ConnectionsPage() {
 
   const handleSaveApiConfig = (configToSave: Omit<NamedApiConfig, 'id'> & { id?: string }) => {
     const savedConfig = addOrUpdateApiConfig(configToSave);
-    // setActiveApiConfigId(savedConfig.id); // Optionally set new/updated config as active
     setEditingApiConfig(null);
     setIsApiConfigDialogOpen(false);
     toast({
@@ -61,7 +68,7 @@ export default function ConnectionsPage() {
       title: '活动连接已切换',
       description: `现在已连接到 “${apiConfigsList.find(c => c.id === id)?.name}”。`,
     });
-    router.push('/'); // Navigate to homepage after setting active
+    router.push('/'); 
   };
 
   const handleDeleteConfirm = () => {
@@ -79,7 +86,7 @@ export default function ConnectionsPage() {
   if (isLoadingApiConfig) {
     return (
       <AppLayout>
-        <div className="text-center">
+        <div className="text-center py-10">
           <p>加载 API 连接中...</p>
         </div>
       </AppLayout>
@@ -97,7 +104,7 @@ export default function ConnectionsPage() {
       </div>
 
       {apiConfigsList.length === 0 ? (
-        <Card className="text-center py-10">
+        <Card className="text-center py-10 shadow-lg">
           <CardHeader>
             <CardTitle>没有已保存的连接</CardTitle>
           </CardHeader>
@@ -107,79 +114,88 @@ export default function ConnectionsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {apiConfigsList.map((config) => (
-            <Card key={config.id} className={`flex flex-col justify-between shadow-lg hover:shadow-xl transition-shadow duration-200 ${activeApiConfig?.id === config.id ? 'border-primary ring-2 ring-primary' : ''}`}>
-              <CardHeader>
-                <div className="flex justify-between items-start">
-                  <CardTitle className="text-xl break-all">{config.name}</CardTitle>
-                  {activeApiConfig?.id === config.id && (
-                    <CheckCircle className="h-6 w-6 text-green-500 shrink-0" />
-                  )}
-                </div>
-                <CardDescription className="break-all text-xs pt-1">
-                  URL: {config.apiUrl}
-                  {config.prefixPath && `/${config.prefixPath}`}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex-grow">
-                {/* Additional details can be added here if needed */}
-              </CardContent>
-              <CardFooter className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleOpenApiConfigDialog(config)}
-                  aria-label={`编辑连接 ${config.name}`}
-                >
-                  <Edit3 className="mr-1 h-4 w-4" />
-                  编辑
-                </Button>
-                 <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button 
-                      variant="destructive" 
-                      size="sm" 
-                      onClick={() => setDeletingConfig(config)}
-                      aria-label={`删除连接 ${config.name}`}
-                    >
-                      <Trash2 className="mr-1 h-4 w-4" />
-                      删除
-                    </Button>
-                  </AlertDialogTrigger>
-                  {deletingConfig && deletingConfig.id === config.id && (
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>确认删除</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          您确定要删除连接 “{deletingConfig.name}” 吗？此操作无法撤销。
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel onClick={() => setDeletingConfig(null)}>取消</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={handleDeleteConfirm}
-                          className="bg-destructive hover:bg-destructive/90"
-                        >
-                          删除
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  )}
-                </AlertDialog>
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={() => handleSetActive(config.id)}
-                  disabled={activeApiConfig?.id === config.id}
-                  aria-label={`激活连接 ${config.name}`}
-                >
-                  <Power className="mr-1 h-4 w-4" />
-                  {activeApiConfig?.id === config.id ? '当前活动' : '设为活动'}
-                </Button>
-              </CardFooter>
-            </Card>
-          ))}
+        <div className="border rounded-lg shadow-md overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[80px] text-center">状态</TableHead>
+                <TableHead>连接名称</TableHead>
+                <TableHead>API 接口地址</TableHead>
+                <TableHead className="w-[150px]">前缀路径</TableHead>
+                <TableHead className="text-right w-[280px]">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {apiConfigsList.map((config) => (
+                <TableRow key={config.id} className={activeApiConfig?.id === config.id ? 'bg-muted/50' : ''}>
+                  <TableCell className="text-center">
+                    {activeApiConfig?.id === config.id && (
+                      <CheckCircle className="h-5 w-5 text-green-500 inline-block" />
+                    )}
+                  </TableCell>
+                  <TableCell className="font-medium break-all">{config.name}</TableCell>
+                  <TableCell className="text-xs break-all">{config.apiUrl}</TableCell>
+                  <TableCell className="text-xs break-all">{config.prefixPath || '无'}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end items-center space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleOpenApiConfigDialog(config)}
+                        aria-label={`编辑连接 ${config.name}`}
+                      >
+                        <Edit3 className="mr-1 h-4 w-4" />
+                        编辑
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button 
+                            variant="destructive" 
+                            size="sm" 
+                            onClick={() => setDeletingConfig(config)}
+                            aria-label={`删除连接 ${config.name}`}
+                            disabled={activeApiConfig?.id === config.id} // Cannot delete active config
+                          >
+                            <Trash2 className="mr-1 h-4 w-4" />
+                            删除
+                          </Button>
+                        </AlertDialogTrigger>
+                        {deletingConfig && deletingConfig.id === config.id && (
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>确认删除</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                您确定要删除连接 “{deletingConfig.name}” 吗？此操作无法撤销。
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel onClick={() => setDeletingConfig(null)}>取消</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={handleDeleteConfirm}
+                                className="bg-destructive hover:bg-destructive/90"
+                              >
+                                删除
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        )}
+                      </AlertDialog>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => handleSetActive(config.id)}
+                        disabled={activeApiConfig?.id === config.id}
+                        aria-label={`激活连接 ${config.name}`}
+                      >
+                        <Power className="mr-1 h-4 w-4" />
+                        {activeApiConfig?.id === config.id ? '当前活动' : '设为活动'}
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       )}
 
