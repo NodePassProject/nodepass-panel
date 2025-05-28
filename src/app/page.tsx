@@ -57,11 +57,12 @@ export default function HomePage() {
 
   if (isLoadingApiConfig) {
     return (
-      // AppLayout will render Header and Footer, so just the loading content here
-      <div className="flex-grow container mx-auto px-4 py-8 flex items-center justify-center">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-4 text-lg">加载 API 配置中...</p>
-      </div>
+      <AppLayout>
+        <div className="flex-grow container mx-auto px-4 py-8 flex items-center justify-center">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+          <p className="ml-4 text-lg">加载 API 配置中...</p>
+        </div>
+      </AppLayout>
     );
   }
   
@@ -75,7 +76,8 @@ export default function HomePage() {
                 创建新实例
               </Button>
             </div>
-            <InstanceList />
+            {/* Add key prop to InstanceList based on activeApiConfig.id */}
+            <InstanceList key={activeApiConfig.id} />
             <EventLog />
           </div>
         ) : (
