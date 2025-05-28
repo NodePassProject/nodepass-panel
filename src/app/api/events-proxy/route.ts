@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
      });
   }
 
+  let response;
   try {
     console.log(`代理: 尝试连接目标事件流。URL: ${targetUrl}, Token: Present (masked)`);
 
@@ -31,10 +32,9 @@ export async function GET(request: NextRequest) {
       'X-API-Key': token,
     };
 
-    const response = await fetch(targetUrl, {
+    response = await fetch(targetUrl, {
       method: 'GET',
       headers: headers,
-      // Disable caching for event streams
       cache: 'no-store',
     });
 
@@ -42,17 +42,15 @@ export async function GET(request: NextRequest) {
       let errorResponseMessage = `上游目标错误: ${response.status} ${response.statusText}`;
       try {
         const bodyText = await response.text();
-        // Only use bodyText if it's not overly long or binary-looking, to avoid polluting logs.
         if (bodyText && bodyText.trim().length > 0 && bodyText.length < 512 && !bodyText.includes('\uFFFD')) {
             errorResponseMessage = bodyText; 
         }
       } catch (e) {
-        // Non-critical error, upstream status text is primary.
         console.warn(`代理: 尝试读取目标错误响应体失败 (状态: ${response.status}). 上游状态: ${response.statusText}. 读取错误: ${e instanceof Error ? e.message : String(e)}`);
       }
       console.error(`代理: 目标事件流错误。状态: ${response.status}, URL: ${targetUrl}, 响应消息: "${errorResponseMessage}"`);
       return new Response(`代理错误: 目标服务器响应 ${response.status}。消息: ${errorResponseMessage}`, { 
-        status: response.status, // Propagate upstream status if appropriate, or use a generic 502/503
+        status: response.status, 
         headers: { 'Content-Type': 'text/plain; charset=utf-8' } 
       });
     }
@@ -67,8 +65,8 @@ export async function GET(request: NextRequest) {
     
     const readableStream = new ReadableStream({
       async start(controller) {
-        const reader = response.body!.getReader();
-        const decoder = new TextDecoder(); // Default UTF-8 is fine
+        const reader = response!.body!.getReader(); // response is guaranteed to be defined here
+        const decoder = new TextDecoder();
 
         function push() {
           reader.read().then(({ done, value }) => {
@@ -78,7 +76,6 @@ export async function GET(request: NextRequest) {
               return;
             }
             const chunk = decoder.decode(value, { stream: true });
-            // console.log('Proxy: Received chunk:', chunk); // For debugging SSE data
             controller.enqueue(new TextEncoder().encode(chunk));
             push();
           }).catch(error => {
@@ -87,14 +84,9 @@ export async function GET(request: NextRequest) {
           });
         }
         push();
-
-        // Handle client disconnect if possible (Next.js specific context might be needed)
-        // For now, upstream closing the connection or errors will terminate the stream.
       },
       cancel(reason) {
         console.log('代理: 客户端取消了流读取。URL:', targetUrl, '原因:', reason);
-        // If fetch supports AbortController, you could abort the fetch here.
-        // For now, the reader will eventually notice the client disconnected.
       }
     });
 
@@ -103,15 +95,26 @@ export async function GET(request: NextRequest) {
         'Content-Type': 'text/event-stream; charset=utf-8',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
-        // Optional: X-Accel-Buffering: no (for Nginx environments)
       },
     });
 
   } catch (error) {
-    console.error('代理: 事件代理处理器发生意外错误。目标 URL:', targetUrl, '错误:', error);
+    // This catch block handles errors from the `fetch` call itself (e.g., network issues)
+    // or any other unexpected errors before the stream starts.
+    console.error(`代理: 事件代理处理器发生错误。目标 URL: ${targetUrl}. 错误详情:`, error);
     const errorMessage = error instanceof Error ? error.message : '未知服务器错误';
+    
+    // If response is undefined here, it means the fetch to targetUrl itself failed.
+    if (!response) {
+      return new Response(`代理错误: 无法连接到上游目标服务器 (${targetUrl})。错误: ${errorMessage}`, { 
+        status: 502, // Bad Gateway
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' }  
+      });
+    }
+
+    // For other unexpected errors after fetch might have partially succeeded
     return new Response(`代理错误: ${errorMessage}`, { 
-      status: 500, // Internal Server Error for unexpected issues
+      status: 500, // Internal Server Error
       headers: { 'Content-Type': 'text/plain; charset=utf-8' }  
     });
   }
