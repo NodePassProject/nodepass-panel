@@ -6,24 +6,15 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Rss } from 'lucide-react';
-import type { Instance, InstanceEvent } from '@/types/nodepass'; // Make sure Instance is imported
+import type { Instance, InstanceEvent } from '@/types/nodepass';
 import { getEventsUrl } from '@/lib/api';
+import { InstanceStatusBadge } from './InstanceStatusBadge'; // Import for colored status
 
 interface EventLogProps {
   apiId: string | null;
   apiRoot: string | null;
   apiToken: string | null;
   apiName: string | null;
-}
-
-function formatBytesForLog(bytes: number | undefined, decimals = 1) {
-  if (bytes === undefined || bytes === null || isNaN(bytes)) return 'N/A';
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
 export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
@@ -47,7 +38,6 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
 
     const initialMessage = `正在直接初始化事件流到 ${directEventsUrl}... (注意：EventSource 无法发送 X-API-Key 进行认证，如果服务器需要，可能会失败)`;
     
-    // Clear previous events and show initialization message
     setEvents([{ type: 'log', data: initialMessage, timestamp: new Date().toISOString() }]);
     
     if (eventSourceRef.current) {
@@ -60,20 +50,18 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
 
 
     newEventSource.onopen = () => {
-      if (currentEventSource !== newEventSource) return; // Stale event source
-      setEvents((prevEvents) => [{ type: 'log', data: `事件流已直接连接。等待事件... (目标: ${directEventsUrl})`, timestamp: new Date().toISOString() }, ...prevEvents.filter(e => e.data !== initialMessage).slice(0,99)]);
+      if (currentEventSource !== newEventSource) return; 
+      setEvents((prevEvents) => [{ type: 'log', data: `事件流已直接连接。等待事件... (目标: ${directEventsUrl})`, timestamp: new Date().toISOString() }, ...prevEvents.filter(e => e.data !== initialMessage && e.data !== `事件流已直接连接。等待事件... (目标: ${directEventsUrl})`).slice(0,99)]);
     };
 
     newEventSource.addEventListener('instance', (event) => {
-      if (currentEventSource !== newEventSource) return; // Stale event source
+      if (currentEventSource !== newEventSource) return; 
       console.log('SSE "instance" event received from server (direct):', event.data);
       try {
         const serverEventPayload = JSON.parse(event.data as string);
         let frontendEventType: InstanceEvent['type'];
         let frontendEventData: any;
 
-        // The 'data' property in our frontend InstanceEvent will hold the 'instance' object from the server
-        // or the 'logs' string.
         switch (serverEventPayload.type) {
           case 'initial':
             frontendEventType = 'instance_created';
@@ -85,11 +73,15 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
             break;
           case 'delete':
             frontendEventType = 'instance_deleted';
-            frontendEventData = serverEventPayload.instance; // Server sends the instance that was deleted
+            frontendEventData = serverEventPayload.instance;
             break;
           case 'log':
             frontendEventType = 'log';
-            frontendEventData = `[实例ID: ${serverEventPayload.instance?.id?.substring(0,8) || 'N/A'}] ${serverEventPayload.logs}`;
+            // For log events, data might be just the log string, or an object with logs and instance
+            frontendEventData = serverEventPayload.logs || `[实例ID: ${serverEventPayload.instance?.id?.substring(0,8) || 'N/A'}] 未知日志内容`;
+            if (serverEventPayload.instance && serverEventPayload.logs) {
+                 frontendEventData = `[${serverEventPayload.instance.id.substring(0,8)}] ${serverEventPayload.logs}`;
+            }
             break;
           default:
             console.warn("未知服务器事件类型 (direct):", serverEventPayload.type, serverEventPayload);
@@ -100,7 +92,8 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
 
         const newEventToLog: InstanceEvent = {
           type: frontendEventType,
-          data: frontendEventData,
+          data: frontendEventData, // This will be instance object or log string
+          instanceDetails: (frontendEventType !== 'log' && serverEventPayload.instance) ? serverEventPayload.instance : undefined,
           timestamp: serverEventPayload.time || new Date().toISOString(),
         };
         setEvents((prevEvents) => [newEventToLog, ...prevEvents.slice(0, 99)]);
@@ -112,8 +105,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
     });
     
     newEventSource.onmessage = (event) => {
-        if (currentEventSource !== newEventSource) return; // Stale event source
-        // This handles messages without an "event:" field, or "event: message"
+        if (currentEventSource !== newEventSource) return;
         console.log("收到通用 SSE 消息 (非 'instance' 事件, direct):", event.data);
         const genericEvent: InstanceEvent = {
           type: 'log',
@@ -124,7 +116,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
     };
 
     newEventSource.onerror = (event: Event) => { 
-      if (currentEventSource !== newEventSource) return; // Stale event source
+      if (currentEventSource !== newEventSource) return; 
       console.error(
         `EventSource 错误 (客户端). ReadyState: ${newEventSource.readyState}. ` +
         `直接连接到: ${directEventsUrl}. ` +
@@ -137,7 +129,6 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       if (newEventSource.readyState === EventSource.CLOSED) {
         errorMessage = 'EventSource 连接已关闭。可能由于服务器端认证失败或网络问题。';
       } else if (newEventSource.readyState === EventSource.CONNECTING) {
-        // Don't log repetitive "connecting" errors if it's just retrying
         return; 
       }
 
@@ -156,14 +147,17 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       }
       eventSourceRef.current = null;
     };
-  }, [apiId, apiRoot, apiToken, apiName]); // Added apiToken and apiName to deps for completeness, though direct EventSource doesn't use token in URL.
+  }, [apiId, apiRoot, apiToken, apiName]);
 
-  const getBadgeText = (type: InstanceEvent['type']): string => {
-    if (type.includes('created')) return '已创建';
-    if (type.includes('updated')) return '已更新';
-    if (type.includes('deleted')) return '已删除';
-    return '日志';
+  const getBadgeTextAndVariant = (type: InstanceEvent['type']): { text: string; variant: BadgeProps['variant'] } => {
+    if (type.includes('created')) return { text: '已创建', variant: 'default' };
+    if (type.includes('updated')) return { text: '已更新', variant: 'secondary' };
+    if (type.includes('deleted')) return { text: '已删除', variant: 'destructive' };
+    return { text: '日志', variant: 'outline' };
   }
+
+  type BadgeProps = React.ComponentProps<typeof Badge>;
+
 
   return (
     <Card className="shadow-lg mt-6">
@@ -177,44 +171,44 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <ScrollArea className="h-72 w-full rounded-md border p-4 bg-muted/20">
+        <ScrollArea className="h-80 w-full rounded-md border p-3 bg-muted/20 text-xs">
           {events.length === 0 && <p className="text-sm text-muted-foreground">暂无事件。</p>}
-          {events.map((event, index) => (
-            <div key={index} className="mb-3 pb-3 border-b border-border/30 last:border-b-0 last:mb-0 text-xs">
-              <div className="flex justify-between items-center mb-1">
-                <Badge variant={
-                    event.type.includes('created') ? 'default' :
-                    event.type.includes('updated') ? 'secondary' :
-                    event.type.includes('deleted') ? 'destructive' : 'outline'
-                } className="capitalize text-xs py-0.5 px-1.5 shadow-sm">
-                  {getBadgeText(event.type)}
+          {events.map((event, index) => {
+            const { text: badgeText, variant: badgeVariant } = getBadgeTextAndVariant(event.type);
+            const instance = event.instanceDetails as Instance | undefined;
+
+            return (
+              <div key={index} className="flex items-start space-x-2 py-1.5 border-b border-border/30 last:border-b-0 last:pb-0 first:pt-0">
+                <Badge variant={badgeVariant} className="capitalize py-0.5 px-1.5 shadow-sm whitespace-nowrap mt-0.5">
+                  {badgeText}
                 </Badge>
-                <span className="text-muted-foreground text-xs">{new Date(event.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-              </div>
-              {typeof event.data === 'object' && event.data !== null && 
-               (event.type === 'instance_created' || event.type === 'instance_updated' || event.type === 'instance_deleted') ? (
-                <div className="p-2.5 mt-1.5 bg-card/80 rounded-md font-mono text-[0.7rem] leading-relaxed shadow-sm border border-border/50">
-                  <p><span className="font-semibold text-foreground/80">实例 ID:</span> {event.data.id}</p>
-                  <p><span className="font-semibold text-foreground/80">类型:</span> <span className="capitalize">{event.data.type}</span></p>
-                  <p><span className="font-semibold text-foreground/80">状态:</span> <span className="capitalize">{event.data.status}</span></p>
-                  <p className="break-all"><span className="font-semibold text-foreground/80">URL:</span> {event.data.url}</p>
-                  {(event.data as Instance).tcprx !== undefined && (
-                    <p>
-                      <span className="font-semibold text-foreground/80">流量 (TCP Rx/Tx, UDP Rx/Tx):</span>
-                      {` ${formatBytesForLog((event.data as Instance).tcprx)}/${formatBytesForLog((event.data as Instance).tcptx)}, ${formatBytesForLog((event.data as Instance).udprx)}/${formatBytesForLog((event.data as Instance).udptx)}`}
+                <div className="flex-grow min-w-0">
+                  {event.type !== 'log' && instance ? (
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <span className="font-mono text-foreground/90">ID: {instance.id.substring(0, 8)}</span>
+                      <span className="text-muted-foreground">|</span>
+                      <span className="capitalize">{instance.type}</span>
+                      <span className="text-muted-foreground">|</span>
+                      <InstanceStatusBadge status={instance.status} />
+                       <span className="text-muted-foreground">|</span>
+                      <span className="font-mono truncate text-foreground/70" title={instance.url}>URL: {instance.url.length > 40 ? instance.url.substring(0, 37) + '...' : instance.url}</span>
+                    </div>
+                  ) : (
+                    <p className="font-mono break-all whitespace-pre-wrap text-foreground/90 leading-relaxed">
+                      {String(event.data)}
                     </p>
                   )}
                 </div>
-              ) : (
-                <p className="mt-1.5 font-mono break-all whitespace-pre-wrap text-foreground/90 text-[0.7rem] leading-relaxed p-1.5 bg-background/30 rounded-sm">
-                  {String(event.data)}
-                </p>
-              )}
-            </div>
-          ))}
+                <span className="text-muted-foreground whitespace-nowrap ml-auto pl-2 mt-0.5">
+                  {new Date(event.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+              </div>
+            );
+          })}
         </ScrollArea>
       </CardContent>
     </Card>
   );
 }
 
+    
