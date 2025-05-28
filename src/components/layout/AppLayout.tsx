@@ -65,7 +65,15 @@ export function AppLayout({ children }: AppLayoutProps) {
         isEditing={!!editingApiConfig}
       />
       <footer className="py-6 text-center text-sm text-muted-foreground border-t border-border bg-muted/30">
-        NodePass 管理器 &copy; {new Date().getFullYear()}
+        NodePass 管理器 &copy; {new Date().getFullYear()} | 
+        由 <a 
+            href="https://github.com/yosebyte/nodepass" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="font-medium text-primary hover:underline"
+          >
+          NodePass
+        </a> 驱动
       </footer>
     </div>
   );
