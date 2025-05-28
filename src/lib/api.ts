@@ -58,9 +58,10 @@ export const nodePassApi = {
 };
 
 // This function provides the URL for the event stream.
-// Standard EventSource cannot send custom headers like X-API-Key if connecting directly.
+// For direct EventSource connection, it returns the raw API endpoint.
+// Note: EventSource cannot send custom headers like X-API-Key.
 export const getEventsUrl = (apiRootUrl: string): string => {
   if (!apiRootUrl) throw new Error("apiRootUrl is required to get events URL");
-  // Ensure v1 is part of the path for the events endpoint, consistent with other API calls
   return `${apiRootUrl}/v1/events`; 
 };
+

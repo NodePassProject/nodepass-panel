@@ -12,7 +12,7 @@ import { getEventsUrl } from '@/lib/api';
 interface EventLogProps {
   apiId: string | null;
   apiRoot: string | null;
-  apiToken: string | null;
+  apiToken: string | null; // apiToken is kept for potential future use or if server supports query token
   apiName: string | null;
 }
 
@@ -21,9 +21,9 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
   const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    if (!apiId || !apiRoot || !apiToken) { // Token is now essential for the proxy
-      const reason = !apiId ? "API 连接未激活" : !apiRoot ? "活动 API 配置的 URL 无效" : "活动 API 配置的令牌缺失";
-      setEvents([{ type: 'log', data: `${reason}。事件流（通过代理）已禁用。`, timestamp: new Date().toISOString() }]);
+    if (!apiId || !apiRoot) {
+      const reason = !apiId ? "API 连接未激活" : "活动 API 配置的 URL 无效";
+      setEvents([{ type: 'log', data: `${reason}。事件流（直接连接）已禁用。`, timestamp: new Date().toISOString() }]);
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
@@ -31,15 +31,10 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       return;
     }
     
-    // Get the actual NodePass API events URL
-    const targetNodePassEventsUrl = getEventsUrl(apiRoot); 
+    // Get the direct NodePass API events URL
+    const directEventsUrl = getEventsUrl(apiRoot); 
 
-    // Construct the URL for our Next.js proxy
-    const proxyUrl = new URL('/api/events-proxy', window.location.origin);
-    proxyUrl.searchParams.append('targetUrl', targetNodePassEventsUrl);
-    proxyUrl.searchParams.append('token', apiToken); // Pass the token to the proxy
-
-    const initialMessage = `正在通过代理初始化事件流到 ${targetNodePassEventsUrl} (代理: ${proxyUrl.pathname})...`;
+    const initialMessage = `正在直接初始化事件流到 ${directEventsUrl}... (注意：EventSource 无法发送 X-API-Key 进行认证，如果服务器需要，可能会失败)`;
     
     setEvents([{ type: 'log', data: initialMessage, timestamp: new Date().toISOString() }]);
     
@@ -47,15 +42,16 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       eventSourceRef.current.close();
     }
 
-    const newEventSource = new EventSource(proxyUrl.toString());
+    // Attempt direct connection. Token is not used in URL for direct EventSource.
+    const newEventSource = new EventSource(directEventsUrl);
     eventSourceRef.current = newEventSource;
 
     newEventSource.onopen = () => {
-      setEvents([{ type: 'log', data: `事件流已通过代理连接。等待事件... (目标: ${targetNodePassEventsUrl})`, timestamp: new Date().toISOString() }]);
+      setEvents((prevEvents) => [{ type: 'log', data: `事件流已直接连接。等待事件... (目标: ${directEventsUrl})`, timestamp: new Date().toISOString() }, ...prevEvents.filter(e => e.data !== initialMessage).slice(0,99)]);
     };
 
     newEventSource.addEventListener('instance', (event) => {
-      console.log('SSE "instance" event received from server (via proxy):', event.data);
+      console.log('SSE "instance" event received from server (direct):', event.data);
       try {
         const serverEventPayload = JSON.parse(event.data as string);
         let frontendEventType: InstanceEvent['type'];
@@ -79,7 +75,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
             frontendEventData = `[实例ID: ${serverEventPayload.instance?.id || 'N/A'}] ${serverEventPayload.logs}`;
             break;
           default:
-            console.warn("未知服务器事件类型 (via proxy):", serverEventPayload.type, serverEventPayload);
+            console.warn("未知服务器事件类型 (direct):", serverEventPayload.type, serverEventPayload);
             frontendEventType = 'log'; 
             frontendEventData = `未知事件 ${serverEventPayload.type}: ${JSON.stringify(serverEventPayload.data || serverEventPayload)}`;
             break;
@@ -92,14 +88,15 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
         };
         setEvents((prevEvents) => [newEventToLog, ...prevEvents.slice(0, 99)]);
       } catch (error) {
-        console.error("无法解析事件数据 (via proxy):", error, "原始数据:", event.data);
+        console.error("无法解析事件数据 (direct):", error, "原始数据:", event.data);
         const errorEventToLog: InstanceEvent = { type: 'log', data: `解析事件错误: ${event.data}`, timestamp: new Date().toISOString() };
         setEvents((prevEvents) => [errorEventToLog, ...prevEvents.slice(0, 99)]);
       }
     });
     
     newEventSource.onmessage = (event) => {
-        console.log("收到通用 SSE 消息 (非 'instance' 事件, via proxy):", event.data);
+        // This handles messages without an "event:" field, or "event: message"
+        console.log("收到通用 SSE 消息 (非 'instance' 事件, direct):", event.data);
         const genericEvent: InstanceEvent = {
           type: 'log',
           data: `通用消息: ${event.data}`,
@@ -110,21 +107,24 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
 
     newEventSource.onerror = (event: Event) => { 
       console.error(
-        `EventSource 错误 (客户端连接到代理). ReadyState: ${newEventSource.readyState}. ` +
-        `代理 URL: ${proxyUrl.toString()}. ` +
+        `EventSource 错误 (客户端). ReadyState: ${newEventSource.readyState}. ` +
+        `直接连接到: ${directEventsUrl}. ` +
         `客户端事件对象 (如下所示) 通常缺乏详细信息。` +
-        `请检查您的 Next.js 应用的服务器端日志 (对于 /api/events-proxy 路由) 以及 NodePass API 服务器 (${targetNodePassEventsUrl}) 的日志以了解根本原因。`,
-        event 
+        `如果这是认证错误，请注意 EventSource 无法发送 X-API-Key 头。` +
+        `请检查 NodePass API 服务器 (${directEventsUrl}) 的日志以了解根本原因。`,
+        event // Log the raw event object for any potential clues
       );
-      let errorMessage = 'EventSource 连接到代理时发生错误。';
+      let errorMessage = 'EventSource 连接错误。';
       if (newEventSource.readyState === EventSource.CLOSED) {
-        errorMessage = 'EventSource 连接已关闭。可能由于代理或上游服务器端问题。';
+        errorMessage = 'EventSource 连接已关闭。可能由于服务器端认证失败或网络问题。';
       } else if (newEventSource.readyState === EventSource.CONNECTING) {
+        // Don't log repetitive "connecting" errors if it's just retrying
         return; 
       }
 
       const errorEventLog: InstanceEvent = { type: 'log', data: errorMessage, timestamp: new Date().toISOString() };
       setEvents((prevEvents) => {
+        // Avoid duplicate error messages if they are the same
         if (prevEvents.length > 0 && prevEvents[0].data === errorMessage && prevEvents[0].type === 'log') {
           return prevEvents;
         }
@@ -138,7 +138,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       }
       eventSourceRef.current = null;
     };
-  }, [apiId, apiRoot, apiToken, apiName]); // Added apiName for consistency in initial message
+  }, [apiId, apiRoot, apiName]); // apiToken removed from deps as it's not used for direct EventSource URL
 
   const getBadgeText = (type: InstanceEvent['type']): string => {
     if (type.includes('created')) return '已创建';
@@ -155,7 +155,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
           实时事件日志
         </CardTitle>
         <CardDescription>
-          来自 NodePass 实例的实时更新 (API: {apiName || 'N/A'}，通过代理连接)。
+          来自 NodePass 实例的实时更新 (API: {apiName || 'N/A'}，直接连接)。
         </CardDescription>
       </CardHeader>
       <CardContent>

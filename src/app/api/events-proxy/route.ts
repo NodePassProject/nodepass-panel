@@ -1,4 +1,7 @@
 
+// This proxy route is no longer used as per user request to connect directly to SSE.
+// Keeping the file commented out in case it's needed again in the future.
+/*
 import { type NextRequest } from 'next/server';
 
 export async function GET(request: NextRequest) {
@@ -104,3 +107,5 @@ export async function GET(request: NextRequest) {
     });
   }
 }
+*/
+export {}; // Add an empty export to make it a module if all content is commented out
