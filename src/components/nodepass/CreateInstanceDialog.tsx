@@ -168,7 +168,11 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
                 <FormItem>
                   <FormLabel>隧道地址</FormLabel>
                   <FormControl>
-                    <Input placeholder={instanceType === "server" ? "服务器监听的控制通道地址, 例如: 0.0.0.0:10101" : "要连接的 NodePass 服务器隧道地址, 例如: your.server.com:10101"} {...field} />
+                    <Input 
+                      placeholder={instanceType === "server" ? "服务器监听的控制通道地址, 例如: 0.0.0.0:10101" : "要连接的 NodePass 服务器隧道地址, 例如: your.server.com:10101"} 
+                      {...field}
+                      className="text-sm" 
+                    />
                   </FormControl>
                   <FormDescription>
                     {instanceType === "server"
@@ -187,7 +191,11 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
                 <FormItem>
                   <FormLabel>目标地址</FormLabel>
                   <FormControl>
-                    <Input placeholder={instanceType === "server" ? "服务器监听的流量转发地址, 例如: 0.0.0.0:8080" : "本地流量转发地址, 例如: 127.0.0.1:8000"} {...field} />
+                    <Input 
+                      placeholder={instanceType === "server" ? "服务器监听的流量转发地址, 例如: 0.0.0.0:8080" : "本地流量转发地址, 例如: 127.0.0.1:8000"} 
+                      {...field} 
+                      className="text-sm"
+                    />
                   </FormControl>
                    <FormDescription>
                     {instanceType === "server"
@@ -257,7 +265,11 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
                         <FormItem>
                           <FormLabel>证书路径 (TLS 模式 2)</FormLabel>
                           <FormControl>
-                            <Input placeholder="例如: /path/to/your/cert.pem" {...field} />
+                            <Input 
+                              placeholder="例如: /path/to/your/cert.pem" 
+                              {...field} 
+                              className="text-sm"
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -270,7 +282,11 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
                         <FormItem>
                           <FormLabel>密钥路径 (TLS 模式 2)</FormLabel>
                           <FormControl>
-                            <Input placeholder="例如: /path/to/your/key.pem" {...field} />
+                            <Input 
+                              placeholder="例如: /path/to/your/key.pem" 
+                              {...field} 
+                              className="text-sm"
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>

@@ -3,7 +3,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Moon, Sun, Settings, LogOut, PlusCircle, Edit3, Check, Trash2, ListTree, Network } from 'lucide-react'; // Added Network
+import { Moon, Sun, Settings, LogOut, PlusCircle, Edit3, Check, Trash2, ListTree, Network } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,14 +23,14 @@ import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 
 interface HeaderProps {
-  onManageApiConfigs: (configToEdit?: NamedApiConfig | null) => void; // To open dialog for add/edit
+  onManageApiConfigs: (configToEdit?: NamedApiConfig | null) => void;
   onClearActiveConfig?: () => void;
   hasActiveApiConfig: boolean;
 }
 
 export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiConfig }: HeaderProps) {
   const { setTheme, theme } = useTheme();
-  const { apiConfigsList, activeApiConfig, setActiveApiConfigId } = useApiConfig();
+  const { apiConfigsList, activeApiConfig, setActiveApiConfigId, deleteApiConfig } = useApiConfig();
   const { toast } = useToast();
   const router = useRouter();
 
@@ -40,6 +40,16 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
      toast({
       title: '活动连接已切换',
       description: `现在已连接到 “${newActiveConf?.name}”。`,
+    });
+    router.push('/'); // Navigate to homepage after switching
+  };
+
+  const handleDeleteApiConfig = (id: string, name: string) => {
+    deleteApiConfig(id);
+    toast({
+      title: '连接已删除',
+      description: `连接 “${name}” 已被删除。`,
+      variant: 'destructive'
     });
   };
 
@@ -123,7 +133,6 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
                 </DropdownMenuItem>
               </Link>
 
-
               {hasActiveApiConfig && onClearActiveConfig && (
                  <>
                   <DropdownMenuSeparator />
@@ -140,4 +149,3 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
     </header>
   );
 }
-
