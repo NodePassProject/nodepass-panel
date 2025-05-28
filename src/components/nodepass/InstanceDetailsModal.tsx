@@ -35,7 +35,15 @@ export function InstanceDetailsModal({ instance, open, onOpenChange }: InstanceD
 
   const detailItems = [
     { label: "ID", value: instance.id, icon: <Fingerprint className="h-4 w-4 text-muted-foreground" /> },
-    { label: "类型", value: <Badge variant={instance.type === 'server' ? 'default' : 'secondary'} className="capitalize">{instance.type === 'server' ? '服务器' : '客户端'}</Badge>, icon: instance.type === 'server' ? <Server className="h-4 w-4 text-muted-foreground" /> : <Smartphone className="h-4 w-4 text-muted-foreground" /> },
+    { 
+      label: "类型", 
+      value: (
+        <Badge variant={instance.type === 'server' ? 'default' : 'accent'} className="capitalize">
+          {instance.type === 'server' ? '服务器' : '客户端'}
+        </Badge>
+      ), 
+      icon: instance.type === 'server' ? <Server className="h-4 w-4 text-muted-foreground" /> : <Smartphone className="h-4 w-4 text-muted-foreground" /> 
+    },
     { label: "状态", value: <InstanceStatusBadge status={instance.status} />, icon: <Cable className="h-4 w-4 text-muted-foreground" /> },
     { label: "URL", value: <span className="break-all text-sm">{instance.url}</span>, fullWidth: true },
     { label: "TCP 接收", value: formatBytes(instance.tcprx), icon: <ArrowDownCircle className="h-4 w-4 text-blue-500" /> },

@@ -56,6 +56,7 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
     queryKey: ['instances', apiId],
     queryFn: () => {
       if (!apiId || !apiRoot || !apiToken) throw new Error("API configuration is incomplete for fetching instances.");
+      console.log(`InstanceList: Fetching instances for API ID: ${apiId}, Root: ${apiRoot}, Token Present: ${!!apiToken}`);
       return nodePassApi.getInstances(apiRoot, apiToken);
     },
     enabled: !!apiId && !!apiRoot && !!apiToken,
@@ -113,9 +114,9 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
     instance.type.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const renderSkeletons = () => (
-    Array.from({ length: 3 }).map((_, i) => (
-       <TableRow key={`skeleton-${i}`}>
+  const renderSkeletons = () => {
+    return Array.from({ length: 3 }).map((_, i) => (
+      <TableRow key={`skeleton-${i}`}>
         {[
           <TableCell key={`skc1-${i}`}><Skeleton className="h-4 w-24" /></TableCell>,
           <TableCell key={`skc2-${i}`}><Skeleton className="h-4 w-16" /></TableCell>,
@@ -126,8 +127,9 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
           <TableCell key={`skc7-${i}`}><Skeleton className="h-4 w-24" /></TableCell>
         ]}
       </TableRow>
-    ))
-  );
+    ));
+  };
+  
 
   return (
     <Card className="shadow-lg mt-6">
@@ -180,7 +182,10 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
                   <TableRow key={instance.id}>
                     <TableCell className="font-medium truncate max-w-xs">{instance.id}</TableCell>
                     <TableCell>
-                      <Badge variant={instance.type === 'server' ? 'default' : 'secondary'} className="items-center whitespace-nowrap">
+                      <Badge 
+                        variant={instance.type === 'server' ? 'default' : 'accent'} 
+                        className="items-center whitespace-nowrap"
+                      >
                         {instance.type === 'server' ? <Server className="h-3 w-3 mr-1" /> : <Smartphone className="h-3 w-3 mr-1" />}
                         {instance.type === 'server' ? '服务器' : '客户端'}
                       </Badge>
@@ -231,7 +236,9 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
                         ? "请先选择一个活动的 API 连接。"
                         : searchTerm && (!filteredInstances || filteredInstances.length === 0)
                           ? "未找到与您搜索匹配的实例。"
-                          : "无可用实例。"
+                          : instances && instances.length === 0
+                            ? "无可用实例。"
+                            : "加载实例中或无可用实例。"
                     }
                   </TableCell>
                 </TableRow>

@@ -7,13 +7,13 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Rss, ChevronRight, ChevronDown, Server, Smartphone } from 'lucide-react';
 import type { Instance, InstanceEvent } from '@/types/nodepass';
-import { getEventsUrl } from '@/lib/api';
+import { getEventsUrl } from '@/lib/api'; // Direct SSE URL
 import { InstanceStatusBadge } from './InstanceStatusBadge';
 
 interface EventLogProps {
   apiId: string | null;
   apiRoot: string | null;
-  apiToken: string | null;
+  apiToken: string | null; // Though not used by direct EventSource for auth
   apiName: string | null;
 }
 
@@ -25,10 +25,10 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
 
   useEffect(() => {
     let currentEventSource: EventSource | null = null;
-    setEvents([]); // Clear previous events when API config changes
+    setEvents([]); 
 
-    if (!apiId || !apiRoot || !apiToken) {
-      const reason = !apiId ? "API 连接未激活" : "活动 API 配置的 URL 或令牌无效";
+    if (!apiRoot || !apiId) { // apiId check is important for re-initialization
+      const reason = !apiId ? "API 连接未激活或ID无效" : "活动 API 配置的 URL 无效";
       setEvents([{ type: 'log', data: `${reason}。事件流已禁用。`, timestamp: new Date().toISOString() }]);
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
@@ -36,9 +36,10 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       }
       return;
     }
-
-    // Construct the direct SSE URL
-    const directEventsUrl = getEventsUrl(apiRoot, apiToken); // apiToken is passed but not used by current getEventsUrl for direct connection
+    
+    // Construct the direct SSE URL using the active API's root.
+    // Token is not sent with direct EventSource
+    const directEventsUrl = getEventsUrl(apiRoot);
     const initialMessage = `正在直接初始化事件流到 ${directEventsUrl}... (注意：EventSource 无法发送 X-API-Key 进行认证，如果服务器需要，可能会失败)`;
     
     setEvents([{ type: 'log', data: initialMessage, timestamp: new Date().toISOString() }]);
@@ -55,7 +56,6 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       if (currentEventSource !== newEventSource) return; // Stale event source
       const connectionMessage = `事件流已直接连接。等待事件... (目标: ${directEventsUrl})`;
       setEvents((prevEvents) => {
-        // Remove initialMessage if present, add new connectionMessage
         const filtered = prevEvents.filter(e => e.data !== initialMessage && e.data !== connectionMessage);
         return [{ type: 'log', data: connectionMessage, timestamp: new Date().toISOString() }, ...filtered.slice(0, 99)];
       });
@@ -88,7 +88,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
             break;
           case 'log':
             frontendEventType = 'log';
-            instanceDetailsPayload = serverEventPayload.instance; // Log events can also have associated instance details
+            instanceDetailsPayload = serverEventPayload.instance; 
             frontendEventData = serverEventPayload.logs || `[实例ID: ${serverEventPayload.instance?.id?.substring(0,8) || 'N/A'}] 未知日志内容`;
             if (serverEventPayload.instance && serverEventPayload.logs) {
                  frontendEventData = `[${serverEventPayload.instance.id.substring(0,8)}] ${serverEventPayload.logs}`;
@@ -116,11 +116,11 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       }
     });
     
-    newEventSource.onmessage = (event) => { // Catchall for unnamed events
+    newEventSource.onmessage = (event) => {
         if (currentEventSource !== newEventSource) return;
         console.log("收到通用 SSE 消息 (非 'instance' 事件):", event.data);
         const genericEvent: InstanceEvent = {
-          type: 'log', // Treat as log
+          type: 'log', 
           data: `通用消息: ${event.data}`,
           timestamp: new Date().toISOString()
         };
@@ -135,26 +135,22 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
         `客户端事件对象 (如下所示) 通常缺乏详细信息。` +
         `如果这是认证错误，请注意 EventSource 无法发送 X-API-Key 头。` +
         `请检查 NodePass API 服务器 (${directEventsUrl}) 的日志以了解根本原因。`,
-        event // The event object itself is often empty or unhelpful for EventSource errors
+        event 
       );
-      let errorMessage = 'EventSource 连接错误。请检查网络和服务器日志。';
+      let errorMessage = `EventSource 连接错误。请检查网络和服务器日志。 (目标: ${directEventsUrl})`;
       if (newEventSource.readyState === EventSource.CLOSED) {
         errorMessage = `EventSource 连接已关闭。对于直接连接, 这通常是因为服务器需要 X-API-Key 认证头, 而 EventSource 无法发送。请检查服务器日志。 (目标: ${directEventsUrl})`;
       } else if (newEventSource.readyState === EventSource.CONNECTING) {
-        // If it's still trying to connect, don't immediately set a persistent error message.
-        // Let it retry or eventually close.
         return; 
       }
 
       const errorEventLog: InstanceEvent = { type: 'log', data: errorMessage, timestamp: new Date().toISOString() };
       setEvents((prevEvents) => {
-        // Avoid duplicate error messages if one is already at the top
         if (prevEvents.length > 0 && prevEvents[0].data === errorMessage && prevEvents[0].type === 'log') {
           return prevEvents;
         }
         return [errorEventLog, ...prevEvents.slice(0, 99)];
       });
-      // No need to close here, it's already closed or will retry based on server headers
     };
 
     return () => {
@@ -163,7 +159,9 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       }
       eventSourceRef.current = null;
     };
-  }, [apiId, apiRoot, apiToken, apiName]); // apiName is for display, apiToken might be used if getEventsUrl changes
+  // Ensure EventSource reinitializes if apiId or apiRoot changes.
+  // apiToken is not directly used by EventSource for auth here, but good to include if apiRoot might depend on it.
+  }, [apiId, apiRoot, apiToken, apiName]); 
 
 
   const getBadgeTextAndVariant = (type: InstanceEvent['type']): { text: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' } => {
@@ -176,7 +174,8 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
   const isExpandable = (event: InstanceEvent): boolean => {
     if (event.instanceDetails) return true;
     if (event.type === 'log' && typeof event.data === 'string' && event.data.length > 100) return true;
-    if (event.type !== 'log' && typeof event.data === 'object' && event.data !== null) return true;
+    // For non-log events that might have object data but no instanceDetails (fallback case)
+    if (event.type !== 'log' && typeof event.data === 'object' && event.data !== null && !event.instanceDetails) return true;
     return false;
   };
 
@@ -228,7 +227,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
                         <span className="font-mono text-foreground/90">ID: {instance.id.substring(0, 8)}</span>
                         <span className="text-muted-foreground">|</span>
                          <Badge
-                          variant={instance.type === 'server' ? 'default' : 'secondary'}
+                          variant={instance.type === 'server' ? 'default' : 'accent'}
                           className="px-1.5 py-0.5 text-xs whitespace-nowrap items-center"
                         >
                           {instance.type === 'server' ? <Server size={12} className="mr-1" /> : <Smartphone size={12} className="mr-1" />}
@@ -259,6 +258,10 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
                       <p className="font-mono break-all whitespace-pre-wrap text-foreground/90 leading-relaxed text-xs">
                         {event.data}
                       </p>
+                    ) : typeof event.data === 'object' && event.data !== null ? (
+                       <pre className="text-xs p-2 rounded-md overflow-x-auto bg-muted/40">
+                        {JSON.stringify(event.data, null, 2)}
+                      </pre>
                     ) : (
                        <p className="text-xs text-muted-foreground italic">无更多详情。</p>
                     )}
