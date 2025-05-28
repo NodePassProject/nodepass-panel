@@ -1,11 +1,11 @@
 
 "use client";
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useApiConfig } from '@/hooks/use-api-key';
 import { nodePassApi } from '@/lib/api';
 import type { Instance } from '@/types/nodepass';
-import { AlertTriangle, Loader2, RefreshCw, Info, ServerIcon, SmartphoneIcon, Network, ExternalLink } from 'lucide-react';
+import { AlertTriangle, Loader2, RefreshCw, Info, ServerIcon, SmartphoneIcon, LinkIcon, RssIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
@@ -15,8 +15,10 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+
 
 interface InstanceWithApiDetails extends Instance {
   apiId: string;
@@ -36,14 +38,9 @@ interface ServerGroup {
 // For client: server it connects to. For server: address it listens on.
 function parseTunnelAddr(urlString: string): string | null {
   try {
-    const url = new URL(urlString); // Basic validation and hostname/port extraction
-    // The tunnel_addr is essentially the host and port from the URL's main part.
-    // If specific parsing beyond host:port is needed, this needs adjustment.
-    // Example: client://server.example.com:10101/... -> server.example.com:10101
-    // Example: server://0.0.0.0:10101/... -> 0.0.0.0:10101
-    return url.host; // This extracts 'hostname:port' or 'hostname' if port is default for scheme
+    const url = new URL(urlString);
+    return url.host; // Extracts 'hostname:port' or 'hostname'
   } catch (e) {
-    // Fallback for non-standard URLs or if URL() constructor fails.
     const schemeSeparator = "://";
     const schemeIndex = urlString.indexOf(schemeSeparator);
     if (schemeIndex === -1) return null;
@@ -62,8 +59,7 @@ function parseTunnelAddr(urlString: string): string | null {
     } else if (querySeparatorIndex !== -1) {
       endOfTunnelAddr = querySeparatorIndex;
     } else {
-      // No / or ? after tunnel_addr
-      return restOfString; // Assumes the whole part is tunnel_addr
+      return restOfString;
     }
     
     return restOfString.substring(0, endOfTunnelAddr);
@@ -79,7 +75,7 @@ function parseLocalTargetAddrForClient(urlString: string): string | null {
 
   const restOfString = urlString.substring(schemeIndex + schemeSeparator.length);
   const pathSeparatorIndex = restOfString.indexOf('/');
-  if (pathSeparatorIndex === -1) return null; // target_addr requires a /
+  if (pathSeparatorIndex === -1) return null;
 
   const targetAndQuery = restOfString.substring(pathSeparatorIndex + 1);
   const querySeparatorIndex = targetAndQuery.indexOf('?');
@@ -87,7 +83,31 @@ function parseLocalTargetAddrForClient(urlString: string): string | null {
   if (querySeparatorIndex !== -1) {
     return targetAndQuery.substring(0, querySeparatorIndex);
   }
-  return targetAndQuery; // The rest is target_addr if no query params
+  return targetAndQuery;
+}
+
+function splitHostPort(address: string | null): [string | null, string | null] {
+  if (!address) return [null, null];
+  
+  // Handle IPv6 with port: e.g., [::1]:8080
+  const ipv6Match = address.match(/^\[(.+)\]:(\d+)$/);
+  if (ipv6Match && ipv6Match[1] && ipv6Match[2]) {
+    return [ipv6Match[1], ipv6Match[2]]; // host (e.g. "::1"), port
+  }
+
+  // Handle IPv4/hostname with port: e.g., 127.0.0.1:8080 or example.com:8080
+  const parts = address.split(':');
+  if (parts.length > 1) {
+    const port = parts.pop(); // Last part is assumed to be port
+    const host = parts.join(':'); // Re-join if IPv6 was passed without brackets (though less common for host part)
+    if (port && !isNaN(parseInt(port, 10))) {
+       return [host, port];
+    }
+  }
+  
+  // No port found, or malformed. Treat whole string as host, port as null.
+  // Or could return [null, null] if strict parsing is needed. For now, flexible.
+  return [address, null];
 }
 
 
@@ -105,19 +125,32 @@ export default function TopologyPage() {
     const clientInstances = allInstances.filter(inst => inst.type === 'client');
     
     const newServerGroups: ServerGroup[] = serverInstances.map(server => {
-      const serverTunnelAddr = parseTunnelAddr(server.url);
+      const serverTunnelAddrFull = parseTunnelAddr(server.url);
       const clientsForThisServer: ConnectedClient[] = [];
 
-      if (serverTunnelAddr) {
-        clientInstances.forEach(client => {
-          const clientTunnelAddr = parseTunnelAddr(client.url);
-          if (clientTunnelAddr && clientTunnelAddr === serverTunnelAddr) {
-            clientsForThisServer.push({
-              ...client,
-              localTargetAddress: parseLocalTargetAddrForClient(client.url),
-            });
-          }
-        });
+      if (serverTunnelAddrFull) {
+        const [serverHost, serverPort] = splitHostPort(serverTunnelAddrFull);
+
+        if (serverPort) { // Only proceed if server port is parsable
+          clientInstances.forEach(client => {
+            const clientTunnelAddrFull = parseTunnelAddr(client.url);
+            if (clientTunnelAddrFull) {
+              const [clientHost, clientPort] = splitHostPort(clientTunnelAddrFull);
+
+              if (clientPort === serverPort) { // Ports must match
+                const isServerHostWildcard = serverHost === '0.0.0.0' || serverHost === '::' || serverHost === '';
+                // serverHost can be '::' when parsed from '[::]'
+                
+                if (isServerHostWildcard || clientHost === serverHost) {
+                  clientsForThisServer.push({
+                    ...client,
+                    localTargetAddress: parseLocalTargetAddrForClient(client.url),
+                  });
+                }
+              }
+            }
+          });
+        }
       }
       
       return {
@@ -131,18 +164,18 @@ export default function TopologyPage() {
   }, []);
 
   const fetchDataAndProcess = useCallback(async () => {
-    if (isLoadingApiConfig) return; 
+    if (isLoadingApiConfig || apiConfigsList.length === 0) {
+      setIsLoadingData(false);
+      if (apiConfigsList.length === 0 && !isLoadingApiConfig) {
+        setFetchErrors(prev => new Map(prev).set("global", "没有配置任何 API 连接。请先添加一个。"));
+        setServerGroups([]);
+      }
+      return;
+    }
     
     setIsLoadingData(true);
     setFetchErrors(new Map()); 
     
-    if (apiConfigsList.length === 0) {
-      setFetchErrors(prev => new Map(prev).set("global", "没有配置任何 API 连接。请先添加一个。"));
-      setServerGroups([]);
-      setIsLoadingData(false);
-      return;
-    }
-
     let combinedInstances: InstanceWithApiDetails[] = [];
     let currentErrors = new Map<string, string>();
 
@@ -150,17 +183,17 @@ export default function TopologyPage() {
       const apiRoot = getApiRootUrl(config.id); 
       const token = getToken(config.id);
 
-      if (!apiRoot) { // Token might be optional for some public APIs, but generally needed
+      if (!apiRoot) {
         currentErrors.set(config.id, `API 配置 "${config.name}" (ID: ${config.id}) 的 URL 无效。`);
         continue;
       }
-       if (!token) {
+      if (!token) {
         currentErrors.set(config.id, `API 配置 "${config.name}" (ID: ${config.id}) 的 Token 缺失。`);
         continue;
       }
 
-
       try {
+        console.log(`Topology: Fetching instances from API "${config.name}" (ID: ${config.id}, URL: ${apiRoot})`);
         const data = await nodePassApi.getInstances(apiRoot, token);
         combinedInstances.push(...data.map(inst => ({ ...inst, apiId: config.id, apiName: config.name })));
       } catch (err: any) {
@@ -189,7 +222,7 @@ export default function TopologyPage() {
   }
 
   const globalError = fetchErrors.get("global");
-  if (globalError) {
+  if (globalError && !isLoadingData) { // Ensure we don't show this if data is still loading
      return (
       <div className="container mx-auto px-4 py-8 text-center">
         <Card className="max-w-md mx-auto shadow-lg">
@@ -211,130 +244,170 @@ export default function TopologyPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
-        <h1 className="text-3xl font-bold text-center sm:text-left">实例连接拓扑 (服务中心视图)</h1>
-        <div className="flex items-center gap-2">
-            {lastRefreshed && (
-                <span className="text-xs text-muted-foreground">
-                    上次刷新: {lastRefreshed.toLocaleTimeString()}
-                </span>
-            )}
-            <Button variant="outline" onClick={fetchDataAndProcess} disabled={isLoadingData}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingData ? 'animate-spin' : ''}`} />
-            {isLoadingData ? '刷新中...' : '刷新数据'}
-            </Button>
+    <TooltipProvider>
+      <div className="container mx-auto px-4 py-8">
+        <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+          <h1 className="text-3xl font-bold text-center sm:text-left">实例连接拓扑 (服务中心视图)</h1>
+          <div className="flex items-center gap-2">
+              {lastRefreshed && (
+                  <span className="text-xs text-muted-foreground">
+                      上次刷新: {lastRefreshed.toLocaleTimeString()}
+                  </span>
+              )}
+              <Button variant="outline" onClick={fetchDataAndProcess} disabled={isLoadingData}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingData ? 'animate-spin' : ''}`} />
+              {isLoadingData ? '刷新中...' : '刷新数据'}
+              </Button>
+          </div>
         </div>
-      </div>
-      
-      {fetchErrors.size > 0 && !globalError && (
-        <div className="mb-4 space-y-2">
-          {Array.from(fetchErrors.entries()).map(([apiId, errorMsg]) => (
-            apiId !== "global" && (
-              <div key={apiId} className="text-destructive-foreground bg-destructive p-3 rounded-md text-sm flex items-center shadow">
-                <AlertTriangle className="h-5 w-5 mr-2 shrink-0" />
-                {errorMsg}
-              </div>
-            )
-          ))}
-        </div>
-      )}
-
-      {isLoadingData && !isLoadingApiConfig && (
-         <div className="flex justify-center items-center h-64">
-            <Loader2 className="h-12 w-12 animate-spin text-primary" />
-            <p className="ml-4 text-lg">加载拓扑数据中...</p>
-        </div>
-      )}
-
-      {!isLoadingData && serverGroups.length === 0 && (
-        <Card className="text-center py-10 shadow-lg">
-          <CardHeader>
-            <CardTitle>无服务实例</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">
-              {apiConfigsList.length > 0 ? "未找到服务类型的实例，或所有API均无服务实例。" : "请先配置API连接。"}
-            </p>
-            {fetchErrors.size > 0 && <p className="text-muted-foreground mt-2">部分API配置加载失败，可能影响结果。</p>}
-          </CardContent>
-        </Card>
-      )}
-
-      {!isLoadingData && serverGroups.length > 0 && (
-        <Accordion type="multiple" className="w-full space-y-4">
-          {serverGroups.map(({ serverInstance, connectedClients }) => (
-            <AccordionItem key={serverInstance.id} value={serverInstance.id} className="border bg-card shadow-md rounded-lg hover:shadow-lg transition-shadow">
-              <AccordionTrigger className="p-4 hover:no-underline">
-                <div className="flex items-center gap-3 w-full">
-                  <ServerIcon className="h-6 w-6 text-primary shrink-0" />
-                  <div className="flex-grow text-left">
-                    <div className="font-semibold text-base flex items-center">
-                      服务实例: <span className="ml-1 font-mono text-primary-foreground bg-primary/80 px-1.5 py-0.5 rounded text-xs">{serverInstance.id.substring(0,8)}...</span>
-                      <Badge variant="outline" className="ml-2 text-xs">{serverInstance.apiName}</Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground break-all font-mono mt-1" title={serverInstance.url}>
-                      URL: {serverInstance.url.length > 70 ? serverInstance.url.substring(0, 67) + "..." : serverInstance.url}
-                    </p>
-                     <p className="text-xs text-muted-foreground mt-1">
-                      监听地址 (Tunnel Addr): <span className="font-mono">{parseTunnelAddr(serverInstance.url) || "N/A"}</span>
-                    </p>
-                  </div>
-                  <Badge variant={connectedClients.length > 0 ? "default" : "secondary"} className="shrink-0">
-                    {connectedClients.length} 客户端连接
-                  </Badge>
+        
+        {fetchErrors.size > 0 && !globalError && (
+          <div className="mb-4 space-y-2">
+            {Array.from(fetchErrors.entries()).map(([apiId, errorMsg]) => (
+              apiId !== "global" && (
+                <div key={apiId} className="text-destructive-foreground bg-destructive p-3 rounded-md text-sm flex items-center shadow">
+                  <AlertTriangle className="h-5 w-5 mr-2 shrink-0" />
+                  {errorMsg}
                 </div>
-              </AccordionTrigger>
-              <AccordionContent className="p-4 border-t">
-                {connectedClients.length === 0 ? (
-                  <p className="text-sm text-muted-foreground italic">此服务实例当前没有连接的客户端。</p>
-                ) : (
-                  <ScrollArea className="max-h-96">
-                  <div className="space-y-3 pr-2">
-                    {connectedClients.map(client => (
-                      <Card key={client.id} className="p-3 bg-background shadow-inner">
-                        <div className="flex items-start gap-3">
-                           <SmartphoneIcon className="h-5 w-5 text-accent mt-0.5 shrink-0"/>
-                           <div className="flex-grow">
-                                <div className="font-medium text-sm flex items-center">
-                                  客户端: <span className="ml-1 font-mono text-accent-foreground bg-accent/80 px-1.5 py-0.5 rounded text-xs">{client.id.substring(0,8)}...</span>
-                                  <Badge variant="outline" className="ml-2 text-xs scale-90">{client.apiName}</Badge>
-                                </div>
-                                <p className="text-xs text-muted-foreground break-all font-mono mt-0.5" title={client.url}>
-                                  URL: {client.url.length > 60 ? client.url.substring(0, 57) + "..." : client.url}
-                                </p>
-                                <p className="text-xs text-muted-foreground mt-0.5">
-                                  连接到服务器: <span className="font-mono">{parseTunnelAddr(client.url) || "N/A"}</span>
-                                </p>
-                                <p className="text-xs text-foreground font-semibold mt-1">
-                                  本地转发 ("落地Node"): <span className="font-mono text-green-600 dark:text-green-400">{client.localTargetAddress || "N/A"}</span>
-                                </p>
-                           </div>
-                        </div>
-                      </Card>
-                    ))}
+              )
+            ))}
+          </div>
+        )}
+
+        {isLoadingData && !isLoadingApiConfig && (
+           <div className="flex justify-center items-center h-64">
+              <Loader2 className="h-12 w-12 animate-spin text-primary" />
+              <p className="ml-4 text-lg">加载拓扑数据中...</p>
+          </div>
+        )}
+
+        {!isLoadingData && serverGroups.length === 0 && (
+          <Card className="text-center py-10 shadow-lg">
+            <CardHeader>
+              <CardTitle>无服务实例或无连接</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-muted-foreground">
+                {apiConfigsList.length > 0 ? "未找到服务类型的实例，或者所有服务实例均无客户端连接。" : "请先配置API连接。"}
+              </p>
+              {fetchErrors.size > 0 && <p className="text-muted-foreground mt-2">部分API配置加载失败，可能影响结果。</p>}
+            </CardContent>
+          </Card>
+        )}
+
+        {!isLoadingData && serverGroups.length > 0 && (
+          <Accordion type="multiple" className="w-full space-y-4">
+            {serverGroups.map(({ serverInstance, connectedClients }) => (
+              <AccordionItem key={serverInstance.id} value={serverInstance.id} className="border bg-card shadow-md rounded-lg hover:shadow-lg transition-shadow">
+                <AccordionTrigger className="p-4 hover:no-underline group">
+                  <div className="flex items-center gap-3 w-full">
+                    <ServerIcon className="h-6 w-6 text-primary shrink-0" />
+                    <div className="flex-grow text-left">
+                      <div className="font-semibold text-base flex items-center flex-wrap gap-x-2">
+                        服务实例: 
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                               <span className="font-mono text-primary-foreground bg-primary/80 px-1.5 py-0.5 rounded text-xs cursor-help">{serverInstance.id.substring(0,8)}...</span>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>ID: {serverInstance.id}</p>
+                            </TooltipContent>
+                        </Tooltip>
+                        <Badge variant="outline" className="text-xs">{serverInstance.apiName}</Badge>
+                      </div>
+                       <Tooltip>
+                          <TooltipTrigger asChild>
+                              <p className="text-xs text-muted-foreground break-all font-mono mt-1 cursor-default" >
+                                URL: {serverInstance.url.length > 70 ? serverInstance.url.substring(0, 67) + "..." : serverInstance.url}
+                              </p>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" align="start">
+                              <p className="max-w-md break-all">{serverInstance.url}</p>
+                          </TooltipContent>
+                      </Tooltip>
+                       <p className="text-xs text-muted-foreground mt-1">
+                        监听地址 (Tunnel Addr): <span className="font-mono">{parseTunnelAddr(serverInstance.url) || "N/A"}</span>
+                      </p>
+                    </div>
+                    <Badge 
+                      variant={connectedClients.length > 0 ? "default" : "secondary"} 
+                      className={`shrink-0 transition-colors duration-200 group-data-[state=open]:bg-accent group-data-[state=open]:text-accent-foreground`}
+                    >
+                      {connectedClients.length} 客户端连接
+                    </Badge>
                   </div>
-                  </ScrollArea>
-                )}
-              </AccordionContent>
-            </AccordionItem>
-          ))}
-        </Accordion>
-      )}
-      
-      <div className="mt-8 p-4 bg-muted/50 rounded-lg text-xs text-muted-foreground shadow">
-        <div className="flex items-center font-semibold mb-2">
-            <Info className="h-4 w-4 mr-2 text-primary shrink-0" />
-            拓扑说明
+                </AccordionTrigger>
+                <AccordionContent className="p-4 border-t">
+                  {connectedClients.length === 0 ? (
+                    <p className="text-sm text-muted-foreground italic">此服务实例当前没有连接的客户端。</p>
+                  ) : (
+                    <ScrollArea className="max-h-[calc(5*4.5rem)]"> {/* Approx 5 clients visible */}
+                    <div className="space-y-3 pr-2">
+                      {connectedClients.map(client => (
+                        <Card key={client.id} className="p-3 bg-background shadow-inner relative overflow-hidden">
+                          <div className="flex items-start gap-3">
+                             <SmartphoneIcon className="h-5 w-5 text-accent mt-0.5 shrink-0"/>
+                             <div className="flex-grow">
+                                  <div className="font-medium text-sm flex items-center flex-wrap gap-x-2">
+                                    客户端: 
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <span className="font-mono text-accent-foreground bg-accent/80 px-1.5 py-0.5 rounded text-xs cursor-help">{client.id.substring(0,8)}...</span>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                            <p>ID: {client.id}</p>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                    <Badge variant="outline" className="text-xs scale-90">{client.apiName}</Badge>
+                                  </div>
+                                  <Tooltip>
+                                      <TooltipTrigger asChild>
+                                          <p className="text-xs text-muted-foreground break-all font-mono mt-0.5 cursor-default" >
+                                            URL: {client.url.length > 60 ? client.url.substring(0, 57) + "..." : client.url}
+                                          </p>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="bottom" align="start">
+                                          <p className="max-w-md break-all">{client.url}</p>
+                                      </TooltipContent>
+                                  </Tooltip>
+                                  <p className="text-xs text-muted-foreground mt-0.5">
+                                    连接到服务器 (Tunnel Addr): <span className="font-mono">{parseTunnelAddr(client.url) || "N/A"}</span>
+                                  </p>
+                                  <p className="text-xs text-foreground font-semibold mt-1">
+                                    本地转发 ("落地Node"): <span className="font-mono text-green-600 dark:text-green-400">{client.localTargetAddress || "N/A"}</span>
+                                  </p>
+                             </div>
+                             <div className="absolute top-2 right-2">
+                                <LinkIcon className="h-4 w-4 text-muted-foreground/50" />
+                             </div>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                    </ScrollArea>
+                  )}
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        )}
+        
+        <div className="mt-8 p-4 bg-muted/50 rounded-lg text-xs text-muted-foreground shadow">
+          <div className="flex items-center font-semibold mb-2">
+              <Info className="h-4 w-4 mr-2 text-primary shrink-0" />
+              拓扑说明
+          </div>
+          <ul className="list-disc list-inside space-y-1">
+              <li>此视图显示所有已配置API源中的 **服务 (Server)** 类型实例。</li>
+              <li>展开每个服务实例，可以查看连接到该服务的 **客户端 (Client)** 实例。</li>
+              <li>客户端的“本地转发 (落地Node)”地址是从其URL的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;target_addr&gt;</code> 部分解析的。</li>
+              <li>客户端通过其URL中的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> (连接目标) 与服务器的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> (监听地址) 匹配来建立连接。当服务器监听地址为主机通配符 (如 <code className="bg-muted px-1 py-0.5 rounded text-foreground">0.0.0.0</code> 或 <code className="bg-muted px-1 py-0.5 rounded text-foreground">[::]</code>) 时，只要端口匹配，客户端即可连接。</li>
+              <li>每个实例旁边会显示其来源 API 配置的名称。</li>
+          </ul>
         </div>
-        <ul className="list-disc list-inside space-y-1">
-            <li>此视图显示所有已配置API源中的 **服务 (Server)** 类型实例。</li>
-            <li>展开每个服务实例，可以查看连接到该服务的 **客户端 (Client)** 实例。</li>
-            <li>客户端的“本地转发 (落地Node)”地址是从其URL的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;target_addr&gt;</code> 部分解析的。</li>
-            <li>客户端通过其URL中的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> (连接目标) 与服务器的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> (监听地址) 匹配来建立连接。</li>
-        </ul>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }
+
 
