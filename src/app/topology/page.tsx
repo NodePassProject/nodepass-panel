@@ -8,7 +8,7 @@ import type { Instance } from '@/types/nodepass';
 import { AlertTriangle, Loader2, RefreshCw, Info, ServerIcon, SmartphoneIcon, ArrowRightLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'; // CardDescription removed as it's not used for server cards anymore
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from '@/components/ui/badge';
@@ -20,18 +20,16 @@ interface InstanceWithApiDetails extends Instance {
 }
 
 interface ClientInstanceDetails extends InstanceWithApiDetails {
-  clientConnectsToServerAddress: string | null; // What server the client connects to (parsed tunnel_addr from client URL)
-  localTargetAddress: string | null;  // "落地node" (parsed target_addr from client URL)
+  clientConnectsToServerAddress: string | null; 
+  localTargetAddress: string | null;  
 }
 
 interface ServerInstanceDetails extends InstanceWithApiDetails {
-  serverListeningAddress: string | null; // Address server listens on for control channel (parsed tunnel_addr from server URL)
-  serverForwardsToAddress: string | null; // Address server forwards traffic to (parsed target_addr from server URL)
+  serverListeningAddress: string | null; 
+  serverForwardsToAddress: string | null;
   connectedClients: ClientInstanceDetails[];
 }
 
-// Parses scheme://<tunnel_addr>/...
-// For client: server it connects to. For server: address it listens on for control.
 function parseTunnelAddr(urlString: string): string | null {
   try {
     const url = new URL(urlString); 
@@ -59,9 +57,6 @@ function parseTunnelAddr(urlString: string): string | null {
   }
 }
 
-// Parses .../<target_addr>?...
-// For client: local forwarding address ("落地node")
-// For server: target address for traffic forwarding
 function parseTargetAddr(urlString: string): string | null {
   const schemeSeparator = "://";
   const schemeIndex = urlString.indexOf(schemeSeparator);
@@ -114,21 +109,17 @@ export default function TopologyPage() {
     const clientInstancesRaw = allApiInstances.filter(inst => inst.type === 'client');
 
     const S_Nodes: ServerInstanceDetails[] = serverInstancesRaw.map(serverInst => {
-      // Server's <tunnel_addr> (control channel listening address)
       const serverListeningAddr = parseTunnelAddr(serverInst.url); 
       const [serverHostToMatch, serverPortToMatch] = splitHostPort(serverListeningAddr);
       
       const connectedC: ClientInstanceDetails[] = [];
       clientInstancesRaw.forEach(clientInst => {
-        // Client's <tunnel_addr> (server address client connects to)
         const clientConnectsToServerAddr = parseTunnelAddr(clientInst.url); 
         if (!clientConnectsToServerAddr) return;
 
         const [clientHost, clientPort] = splitHostPort(clientConnectsToServerAddr);
 
-        // Match based on: Server's <tunnel_addr> port == Client's <tunnel_addr> port
-        // AND (Server's <tunnel_addr> host is wildcard OR Server's <tunnel_addr> host == Client's <tunnel_addr> host)
-        if (serverPortToMatch === clientPort) {
+        if (serverPortToMatch && clientPort && serverPortToMatch === clientPort) {
           const isServerHostWildcard = serverHostToMatch === '0.0.0.0' || serverHostToMatch === '::' || serverHostToMatch === '';
           
           if (isServerHostWildcard || clientHost === serverHostToMatch) {
@@ -143,15 +134,15 @@ export default function TopologyPage() {
 
       return {
         ...serverInst,
-        serverListeningAddress: serverListeningAddr, // For display "监听"
-        serverForwardsToAddress: parseTargetAddr(serverInst.url), // For display "目标转发"
+        serverListeningAddress: serverListeningAddr,
+        serverForwardsToAddress: parseTargetAddr(serverInst.url), 
         connectedClients: connectedC,
       };
     });
     
     setProcessedServers(S_Nodes);
     setLastRefreshed(new Date());
-  }, []); // Dependencies intentionally empty as helper functions are stable.
+  }, []); 
 
 
   const fetchDataAndProcess = useCallback(async () => {
@@ -296,7 +287,7 @@ export default function TopologyPage() {
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <p className="font-semibold text-lg truncate group-hover:underline" title={`${server.apiName} (ID: ${server.id})`}>
-                              {server.apiName} {/* Main display name is now apiName */}
+                              {server.apiName} 
                             </p>
                           </TooltipTrigger>
                           <TooltipContent side="top" className="max-w-md break-all">
@@ -327,10 +318,10 @@ export default function TopologyPage() {
                               <div className="flex-grow">
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <p className="font-medium text-sm truncate" title={client.id}>
+                                    <div className="font-medium text-sm truncate" title={client.id}> {/* Changed from p to div */}
                                       客户端: {client.id.substring(0,12)}...
-                                      <Badge variant="secondary" className="text-xs ml-2 py-0.5 px-1.5 scale-90 origin-left">API: {client.apiName}</Badge>
-                                    </p>
+                                      <Badge variant="secondary" className="text-xs ml-2 py-0.5 px-1.5 scale-90 origin-left whitespace-nowrap">API: {client.apiName}</Badge>
+                                    </div>
                                   </TooltipTrigger>
                                   <TooltipContent side="top" className="max-w-md break-all"><p>ID: {client.id}</p><p>URL: {client.url}</p><p>来源API: {client.apiName}</p></TooltipContent>
                                 </Tooltip>
@@ -370,3 +361,4 @@ export default function TopologyPage() {
   );
 }
     
+
