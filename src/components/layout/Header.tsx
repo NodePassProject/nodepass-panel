@@ -67,7 +67,7 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
         {/* Left Group: Logo, Title, Active API Name */}
         <div className="flex items-center">
           <Link href="/" className="flex items-center" aria-label="主页">
-            <Home className="mr-2 h-6 w-6 text-primary" />
+            <Network className="mr-2 h-6 w-6 text-primary" /> {/* Changed Home to Network icon */}
             <h1 className="text-flow-effect text-xl font-bold tracking-tight sm:text-2xl">NodePass 管理器</h1>
           </Link>
            {activeApiConfig && (
