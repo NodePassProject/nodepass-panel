@@ -56,14 +56,13 @@ export default function HomePage() {
   const currentApiRoot = activeApiConfig ? getApiRootUrl(activeApiConfig.id) : null;
   const currentToken = activeApiConfig ? getToken(activeApiConfig.id) : null;
 
-  // console.log('HomePage rendering. Active API Config:', activeApiConfig); // Diagnostic log
 
   if (isLoadingApiConfig) {
     return (
       <AppLayout>
-        <div className="flex-grow container mx-auto px-4 py-8 flex items-center justify-center">
+        <div className="flex-grow container mx-auto px-4 py-8 flex items-center justify-center h-[calc(100vh-10rem-4rem)]">
           <Loader2 className="h-12 w-12 animate-spin text-primary" />
-          <p className="ml-4 text-lg">加载 API 配置中...</p>
+          <p className="ml-4 text-lg">加载 API 配置...</p>
         </div>
       </AppLayout>
     );
@@ -94,7 +93,7 @@ export default function HomePage() {
             />
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center text-center h-[calc(100vh-10rem-4rem)]">
+          <div className="flex flex-col items-center justify-center text-center h-[calc(100vh-10rem-4rem)]"> {/* Adjusted height for centering */}
             <h2 className="text-2xl font-semibold mb-4">
               {apiConfigsList.length > 0 ? '未选择 API 连接' : '需要 API 连接'}
             </h2>

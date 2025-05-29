@@ -15,7 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ApiConfigDialog } from '@/components/nodepass/ApiKeyDialog';
-import { PlusCircle, Edit3, Trash2, Power, CheckCircle } from 'lucide-react';
+import { PlusCircle, Edit3, Trash2, Power, CheckCircle, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -69,7 +69,7 @@ export default function ConnectionsPage() {
       title: '活动连接已切换',
       description: `已连接到 “${config?.name}”。`,
     });
-    router.push('/'); 
+    router.push('/');
   };
 
   const handleDeleteConfirm = () => {
@@ -83,12 +83,13 @@ export default function ConnectionsPage() {
       setDeletingConfig(null);
     }
   };
-  
+
   if (isLoadingApiConfig) {
     return (
       <AppLayout>
-        <div className="text-center py-10">
-          <p>加载 API 连接中...</p>
+        <div className="flex-grow container mx-auto px-4 py-8 flex items-center justify-center h-[calc(100vh-10rem-4rem)]">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+          <p className="ml-4 text-lg">加载 API 连接...</p>
         </div>
       </AppLayout>
     );
@@ -138,7 +139,7 @@ export default function ConnectionsPage() {
                   <TableCell className="text-xs break-all">{config.apiUrl}</TableCell>
                   <TableCell className="text-xs break-all">{config.prefixPath || '无'}</TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end items-center space-x-2">
+                    <div className="flex justify-end items-center space-x-2 sm:flex-wrap">
                       <Button
                         variant="outline"
                         size="sm"
@@ -150,9 +151,9 @@ export default function ConnectionsPage() {
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button 
-                            variant="destructive" 
-                            size="sm" 
+                          <Button
+                            variant="destructive"
+                            size="sm"
                             onClick={() => setDeletingConfig(config)}
                             aria-label={`删除连接 ${config.name}`}
                             disabled={activeApiConfig?.id === config.id}

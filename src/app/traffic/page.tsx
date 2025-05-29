@@ -71,44 +71,45 @@ const TrafficPage: NextPage = () => {
         return [];
       }
       let combinedInstances: InstanceWithApiDetails[] = [];
-      for (const config of apiConfigsList) {
-        const apiRootVal = getApiRootUrl(config.id);
-        const tokenVal = getToken(config.id);
-        if (!apiRootVal || !tokenVal) {
-          console.warn(`TrafficPage: API config "${config.name}" is invalid, skipping.`);
-          continue;
+      // Using Promise.allSettled to handle individual API fetch errors
+      const results = await Promise.allSettled(
+        apiConfigsList.map(async (config) => {
+          const apiRootVal = getApiRootUrl(config.id);
+          const tokenVal = getToken(config.id);
+          if (!apiRootVal || !tokenVal) {
+            // This case should ideally be caught by `checkApiRootUrl` in `nodePassApi`
+            // but it's good to have a fallback log here.
+            console.warn(`TrafficPage: API config "${config.name}" (ID: ${config.id}) is invalid for fetching.`);
+            return []; // Return empty for this config if invalid
+          }
+          try {
+            const data = await nodePassApi.getInstances(apiRootVal, tokenVal);
+            return data.map(inst => ({ ...inst, apiId: config.id, apiName: config.name }));
+          } catch (err: any) {
+             console.error(`TrafficPage: Failed to load instances from "${config.name}" (ID: ${config.id}):`, err.message || err);
+             throw err; // Re-throw to be caught by useQuery's error state for the whole query if desired, or handle per API
+          }
+        })
+      );
+
+      results.forEach(result => {
+        if (result.status === 'fulfilled' && result.value) {
+          combinedInstances.push(...result.value);
+        } else if (result.status === 'rejected') {
+          // Error already logged, useQuery will also reflect an error state
         }
-        try {
-          const data = await nodePassApi.getInstances(apiRootVal, tokenVal);
-          combinedInstances.push(...data.map(inst => ({ ...inst, apiId: config.id, apiName: config.name })));
-        } catch (err: any) {
-          console.error(`TrafficPage: Failed to load instances from "${config.name}":`, err);
-          // Optionally, collect these errors to display them
-        }
-      }
+      });
       return combinedInstances;
     },
     enabled: !isLoadingApiConfig && apiConfigsList.length > 0,
-    refetchOnMount: 'always', // Fetch when page is mounted/navigated to
-    refetchOnWindowFocus: true, // Fetch when window regains focus
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
     onSuccess: () => {
       setLastRefreshed(new Date());
     }
   });
 
   const allInstances = allInstancesData || [];
-  const fetchErrors = useMemo(() => {
-    const errors = new Map<string, string>();
-    if (isLoadingApiConfig && apiConfigsList.length === 0) {
-      errors.set("global", "无API配置。请先添加。");
-    } else if (fetchError) {
-      // This is a general query error, might be harder to map to specific API
-      errors.set("global", `加载数据失败: ${fetchError.message}`);
-    }
-    // More granular error tracking would require individual queries per API config
-    return errors;
-  }, [isLoadingApiConfig, apiConfigsList, fetchError]);
-
 
   const overallTrafficData = useMemo(() => {
     if (allInstances.length === 0) return [];
@@ -135,21 +136,20 @@ const TrafficPage: NextPage = () => {
   if (isLoadingApiConfig) {
     return (
       <AppLayout>
-        <div className="text-center py-10">
-          <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
-          <p>加载API配置...</p>
+        <div className="text-center py-10 flex flex-col items-center justify-center h-[calc(100vh-10rem-4rem)]">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+          <p className="mt-3">加载API配置...</p>
         </div>
       </AppLayout>
     );
   }
 
-  const globalError = fetchErrors.get("global");
-  if (globalError && !isLoadingData) {
+  if (fetchError && !isLoadingData) { // Show global error if the whole query fails
     return (
       <AppLayout>
         <Card className="max-w-md mx-auto mt-10 shadow-lg">
           <CardHeader><CardTitle className="text-destructive flex items-center justify-center"><AlertTriangle className="h-6 w-6 mr-2" />错误</CardTitle></CardHeader>
-          <CardContent><p>{globalError}</p></CardContent>
+          <CardContent><p>加载数据失败: {fetchError.message}</p></CardContent>
         </Card>
       </AppLayout>
     );
@@ -169,32 +169,17 @@ const TrafficPage: NextPage = () => {
         </div>
       </div>
 
-      {fetchErrors.size > 0 && !globalError && (
-        <div className="mb-4 space-y-2">
-          {Array.from(fetchErrors.entries()).map(([apiId, errorMsg]) => (
-             apiId !== "global" && (
-              <Card key={apiId} className="bg-destructive/10 border-destructive/30 shadow-md">
-                <CardContent className="p-3 text-sm text-destructive flex items-start">
-                  <AlertTriangle className="h-5 w-5 mr-2.5 shrink-0 mt-0.5" />
-                  <div><p className="font-semibold">加载错误 (API: {getApiConfigById(apiId)?.name || apiId})</p><p>{errorMsg}</p></div>
-                </CardContent>
-              </Card>
-            )
-          ))}
-        </div>
-      )}
-
       {isLoadingData && (
-        <div className="text-center py-10">
-          <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
-          <p>加载流量数据...</p>
+        <div className="text-center py-10 flex flex-col items-center justify-center h-[calc(100vh-10rem-4rem)]">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+          <p className="mt-3">加载流量数据...</p>
         </div>
       )}
 
-      {!isLoadingData && allInstances.length === 0 && fetchErrors.size === 0 && (
+      {!isLoadingData && allInstances.length === 0 && !fetchError && (
         <Card className="text-center py-10 shadow-lg">
           <CardHeader><CardTitle>无数据显示</CardTitle></CardHeader>
-          <CardContent><p className="text-muted-foreground">未找到任何实例，或所有实例流量为0。</p></CardContent>
+          <CardContent><p className="text-muted-foreground">{apiConfigsList.length > 0 ? "未找到任何实例或所有实例流量为0。" : "请先配置API连接。"}</p></CardContent>
         </Card>
       )}
 
