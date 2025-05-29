@@ -21,27 +21,30 @@ interface InstanceWithApiDetails extends Instance {
 }
 
 interface ClientInstanceDetails extends InstanceWithApiDetails {
-  clientConnectsToServerAddress: string | null; 
-  localTargetAddress: string | null;  
+  clientConnectsToServerAddress: string | null;
+  localTargetAddress: string | null;
 }
 
 interface ServerInstanceDetails extends InstanceWithApiDetails {
-  serverListeningAddress: string | null; 
+  serverListeningAddress: string | null;
   serverForwardsToAddress: string | null;
   connectedClients: ClientInstanceDetails[];
 }
 
 function parseTunnelAddr(urlString: string): string | null {
   try {
-    const url = new URL(urlString); 
-    return url.host; 
+    // Try parsing as a full URL first (for cases like client://hostname:port/...)
+    const url = new URL(urlString);
+    return url.host; // Extracts 'hostname:port'
   } catch (e) {
+    // If not a full URL, try manual parsing for scheme://tunnel/target
     const schemeSeparator = "://";
     const schemeIndex = urlString.indexOf(schemeSeparator);
-    if (schemeIndex === -1) return null; 
+    if (schemeIndex === -1) return null; // No scheme found
 
     const restOfString = urlString.substring(schemeIndex + schemeSeparator.length);
     
+    // Tunnel address is between "://" and the first "/" or "?"
     const pathSeparatorIndex = restOfString.indexOf('/');
     const querySeparatorIndex = restOfString.indexOf('?');
     let endOfTunnelAddr = -1;
@@ -51,6 +54,7 @@ function parseTunnelAddr(urlString: string): string | null {
     } else if (pathSeparatorIndex !== -1) {
       endOfTunnelAddr = pathSeparatorIndex;
     } else if (querySeparatorIndex !== -1) {
+      // This case might be rare if target_addr is expected, but good to cover
       endOfTunnelAddr = querySeparatorIndex;
     }
     
@@ -59,13 +63,14 @@ function parseTunnelAddr(urlString: string): string | null {
 }
 
 function parseTargetAddr(urlString: string): string | null {
+  // Target address is after the first "/" and before the first "?" after that
   const schemeSeparator = "://";
   const schemeIndex = urlString.indexOf(schemeSeparator);
   if (schemeIndex === -1) return null;
 
   const restOfString = urlString.substring(schemeIndex + schemeSeparator.length);
   const pathSeparatorIndex = restOfString.indexOf('/');
-  if (pathSeparatorIndex === -1) return null; 
+  if (pathSeparatorIndex === -1) return null; // No target part if no "/" after tunnel_addr
 
   const targetAndQuery = restOfString.substring(pathSeparatorIndex + 1);
   const querySeparatorIndex = targetAndQuery.indexOf('?');
@@ -73,33 +78,38 @@ function parseTargetAddr(urlString: string): string | null {
   return querySeparatorIndex !== -1 ? targetAndQuery.substring(0, querySeparatorIndex) : targetAndQuery;
 }
 
+// Helper to split host and port from an address string like "host:port" or "[ipv6]:port"
 function splitHostPort(address: string | null): [string | null, string | null] {
   if (!address) return [null, null];
   
+  // Regex for IPv6 with port: [host]:port
   const ipv6WithPortMatch = address.match(/^\[(.+)\]:(\d+)$/);
   if (ipv6WithPortMatch) {
-    return [ipv6WithPortMatch[1], ipv6WithPortMatch[2]]; 
+    return [ipv6WithPortMatch[1], ipv6WithPortMatch[2]]; // [host, port]
   }
 
+  // For IPv4 or hostname with port, find the last colon
   const lastColonIndex = address.lastIndexOf(':');
   if (lastColonIndex === -1 || address.substring(0, lastColonIndex).includes(':')) { 
-    return [address, null]; 
+    // No colon, or multiple colons (likely IPv6 without brackets - treat as host only)
+    return [address, null]; // No port found or ambiguous
   }
 
   const potentialHost = address.substring(0, lastColonIndex);
   const potentialPort = address.substring(lastColonIndex + 1);
 
+  // Validate if potentialPort is indeed a number
   if (potentialPort && !isNaN(parseInt(potentialPort, 10)) && parseInt(potentialPort, 10).toString() === potentialPort) {
      return [potentialHost, potentialPort];
   }
   
-  return [address, null];
+  return [address, null]; // Fallback: treat whole string as host if port is not clearly identified
 }
 
 
 export default function TopologyPage() {
   const router = useRouter();
-  const { apiConfigsList, isLoading: isLoadingApiConfig, getApiRootUrl, getToken } = useApiConfig();
+  const { apiConfigsList, isLoading: isLoadingApiConfig, getApiConfigById } = useApiConfig();
   
   const [processedServers, setProcessedServers] = useState<ServerInstanceDetails[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
@@ -111,24 +121,27 @@ export default function TopologyPage() {
     const clientInstancesRaw = allApiInstances.filter(inst => inst.type === 'client');
 
     const sNodes: ServerInstanceDetails[] = serverInstancesRaw.map(serverInst => {
-      const serverOwnTunnelAddr = parseTunnelAddr(serverInst.url); 
+      const serverOwnTunnelAddr = parseTunnelAddr(serverInst.url); // Server's listening address
       const [serverHostToMatch, serverPortToMatch] = splitHostPort(serverOwnTunnelAddr);
       
       const connectedC: ClientInstanceDetails[] = [];
       clientInstancesRaw.forEach(clientInst => {
+        // Client's tunnel_addr is the server address it connects to
         const clientConnectsToServerAddrFull = parseTunnelAddr(clientInst.url); 
         if (!clientConnectsToServerAddrFull) return;
 
         const [clientHostConnectsTo, clientPortConnectsTo] = splitHostPort(clientConnectsToServerAddrFull);
         
+        // Match ports first
         if (serverPortToMatch && clientPortConnectsTo && serverPortToMatch === clientPortConnectsTo) {
+          // Check host: server is wildcard OR hosts match exactly
           const isServerHostWildcard = serverHostToMatch === '0.0.0.0' || serverHostToMatch === '::' || serverHostToMatch === '' || serverHostToMatch === null;
           
           if (isServerHostWildcard || clientHostConnectsTo === serverHostToMatch) {
             connectedC.push({
               ...clientInst,
               clientConnectsToServerAddress: clientConnectsToServerAddrFull,
-              localTargetAddress: parseTargetAddr(clientInst.url), 
+              localTargetAddress: parseTargetAddr(clientInst.url), // Client's local forwarding target
             });
           }
         }
@@ -137,12 +150,14 @@ export default function TopologyPage() {
       return {
         ...serverInst,
         serverListeningAddress: serverOwnTunnelAddr, 
-        serverForwardsToAddress: parseTargetAddr(serverInst.url), 
+        serverForwardsToAddress: parseTargetAddr(serverInst.url), // Server's target_addr (where it forwards traffic)
         connectedClients: connectedC,
       };
     });
     
-    setProcessedServers(sNodes);
+    // Filter out servers with no connected clients for the default view
+    const serversWithClients = sNodes.filter(server => server.connectedClients.length > 0);
+    setProcessedServers(serversWithClients);
     setLastRefreshed(new Date());
   }, []); 
 
@@ -166,14 +181,20 @@ export default function TopologyPage() {
     let currentErrors = new Map<string, string>();
 
     for (const config of apiConfigsList) {
-      const apiRoot = getApiRootUrl(config.id); 
-      const token = getToken(config.id);
+      const apiConfigDetails = getApiConfigById(config.id); // Use the stricter getter
 
-      if (!apiRoot || !token) {
+      if (!apiConfigDetails || !apiConfigDetails.apiUrl || !apiConfigDetails.token) {
         console.warn(`拓扑: API配置 "${config.name}" (ID: ${config.id}) 无效或不完整，已跳过。`);
         currentErrors.set(config.id, `API配置 “${config.name}” 无效。`);
         continue;
       }
+      
+      let apiRoot = apiConfigDetails.apiUrl.replace(/\/+$/, '');
+      if (apiConfigDetails.prefixPath && apiConfigDetails.prefixPath.trim() !== '') {
+        apiRoot += `/${apiConfigDetails.prefixPath.replace(/^\/+|\/+$/g, '').trim()}`;
+      }
+      const token = apiConfigDetails.token;
+
 
       try {
         console.log(`拓扑: 正在从API "${config.name}" (ID: ${config.id}, URL: ${apiRoot}) 获取实例`);
@@ -188,7 +209,7 @@ export default function TopologyPage() {
     setFetchErrors(currentErrors);
     processInstanceData(combinedInstances);
     setIsLoadingData(false); 
-  }, [apiConfigsList, isLoadingApiConfig, getApiRootUrl, getToken, processInstanceData]);
+  }, [apiConfigsList, isLoadingApiConfig, getApiConfigById, processInstanceData]);
 
   useEffect(() => {
     fetchDataAndProcess();
@@ -262,10 +283,10 @@ export default function TopologyPage() {
 
           {!isLoadingData && processedServers.length === 0 && ( 
             <Card className="text-center py-10 shadow-lg flex-grow flex flex-col justify-center items-center bg-card">
-              <CardHeader><CardTitle>无服务器实例数据</CardTitle></CardHeader>
+              <CardHeader><CardTitle>无数据显示</CardTitle></CardHeader>
               <CardContent>
                 <p className="text-muted-foreground">
-                  {apiConfigsList.length > 0 ? "无服务器实例或无客户端连接。" : "请先配置API连接。"}
+                  {apiConfigsList.length > 0 ? "当前无服务器实例，或所有服务器实例均无客户端连接。" : "请先配置API连接。"}
                 </p>
                 {fetchErrors.size > 0 && <p className="text-muted-foreground mt-2">部分API加载失败可能影响结果。</p>}
               </CardContent>
@@ -283,7 +304,7 @@ export default function TopologyPage() {
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <h3 className="font-semibold text-lg truncate group-hover:underline" title={`来源 API: ${server.apiName}\n服务器实例 ID: ${server.id}\nURL: ${server.url}`}>
-                              {server.apiName} 
+                              {server.apiName} {/* Main display is API Name */}
                             </h3>
                           </TooltipTrigger>
                           <TooltipContent side="top" className="max-w-md break-all">
@@ -292,7 +313,7 @@ export default function TopologyPage() {
                             <p>URL: {server.url}</p>
                           </TooltipContent>
                         </Tooltip>
-                        <div className="text-xs text-muted-foreground"> 
+                        <div className="text-xs text-muted-foreground"> {/* Changed from p to div */}
                           服务器 ID: {server.id.substring(0,12)}... | 监听: <span className="font-mono">{server.serverListeningAddress || 'N/A'}</span> | 状态: <InstanceStatusBadge status={server.status} />
                         </div>
                          <div className="text-xs text-muted-foreground">
@@ -302,46 +323,44 @@ export default function TopologyPage() {
                     </div>
                   </AccordionTrigger>
                   <AccordionContent className="px-4 pb-4 pt-2 border-t border-border/50">
-                    {server.connectedClients.length === 0 ? (
-                      <p className="text-sm text-muted-foreground italic py-2">此服务器实例当前没有连接的客户端。</p>
-                    ) : (
-                      <div className="space-y-3">
-                        <h4 className="text-sm font-semibold text-muted-foreground mb-1">已连接客户端 ({server.connectedClients.length}):</h4>
-                        {server.connectedClients.map((client) => (
-                          <Card key={client.id} className="bg-background/50 p-3 shadow-sm border">
-                            <div className="flex items-start gap-2">
-                              <SmartphoneIcon className="h-4 w-4 text-accent shrink-0 mt-0.5" />
-                              <div className="flex-grow">
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <div 
-                                      className="font-medium text-sm truncate" 
-                                      title={`来源 API: ${client.apiName}\n客户端 ID: ${client.id}\nURL: ${client.url}`}
-                                    >
-                                      客户端: {client.apiName} <span className="text-muted-foreground text-xs">(ID: {client.id.substring(0,8)}...)</span>
-                                    </div>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="top" className="max-w-md break-all">
-                                    <p>来源 API: {client.apiName}</p>
-                                    <p>客户端 ID: {client.id}</p>
-                                    <p>URL: {client.url}</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                                <div className="text-xs text-muted-foreground"> {/* Changed from p to div */}
-                                  连接至: <span className="font-mono">{client.clientConnectsToServerAddress || 'N/A'}</span> (<InstanceStatusBadge status={client.status} />)
-                                </div>
+                    {/* Clients are already filtered, so this server WILL have clients if it's rendered */}
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-semibold text-muted-foreground mb-1">已连接客户端 ({server.connectedClients.length}):</h4>
+                      {server.connectedClients.map((client) => (
+                        <Card key={client.id} className="bg-background/50 p-3 shadow-sm border">
+                          <div className="flex items-start gap-2">
+                            <SmartphoneIcon className="h-4 w-4 text-accent shrink-0 mt-0.5" />
+                            <div className="flex-grow">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div 
+                                    className="font-medium text-sm truncate" 
+                                    title={`来源 API: ${client.apiName}\n客户端 ID: ${client.id}\nURL: ${client.url}`}
+                                  >
+                                    客户端: {client.apiName} <span className="text-muted-foreground text-xs">(ID: {client.id.substring(0,8)}...)</span>
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-md break-all">
+                                  <p>来源 API: {client.apiName}</p>
+                                  <p>客户端 ID: {client.id}</p>
+                                  <p>URL: {client.url}</p>
+                                </TooltipContent>
+                              </Tooltip>
+                              <div className="text-xs text-muted-foreground"> {/* Changed from p to div */}
+                                连接至: <span className="font-mono">{client.clientConnectsToServerAddress || 'N/A'}</span> (<InstanceStatusBadge status={client.status} />)
                               </div>
                             </div>
-                            <div className="mt-2 pl-6 border-l-2 border-dashed border-muted-foreground/30 ml-[7px]">
-                              <p className="text-xs text-foreground flex items-center">
-                                  <ArrowRightLeft className="h-3.5 w-3.5 mr-1.5 text-green-600 dark:text-green-400 shrink-0"/>
-                                  本地目标: <span className="font-semibold font-mono text-green-600 dark:text-green-400 ml-1">{client.localTargetAddress || 'N/A'}</span>
-                              </p>
-                            </div>
-                          </Card>
-                        ))}
-                      </div>
-                    )}
+                          </div>
+                          {/* "Thin line" effect for fishbone style */}
+                          <div className="mt-2 pl-6 border-l-2 border-dashed border-muted-foreground/30 ml-[7px]"> {/* Adjust ml to align with icon */}
+                            <p className="text-xs text-foreground flex items-center">
+                                <ArrowRightLeft className="h-3.5 w-3.5 mr-1.5 text-green-600 dark:text-green-400 shrink-0"/>
+                                本地目标: <span className="font-semibold font-mono text-green-600 dark:text-green-400 ml-1">{client.localTargetAddress || 'N/A'}</span>
+                            </p>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
                   </AccordionContent>
                 </AccordionItem>
               ))}
@@ -351,9 +370,9 @@ export default function TopologyPage() {
           <div className="mt-8 p-4 bg-muted/30 rounded-lg text-xs text-muted-foreground shadow-sm">
             <div className="flex items-center font-semibold mb-2"><Info className="h-4 w-4 mr-2 text-primary shrink-0" />拓扑说明</div>
             <ul className="list-disc list-inside space-y-1.5 pl-1">
-              <li>此视图聚合所有API源的服务器实例。</li>
-              <li>展开服务器可查看其连接的客户端。</li>
-              <li>连接匹配: 客户端 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> 与服务器 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> (端口匹配; 主机匹配或服务器通配符)。</li>
+              <li>此视图聚合所有API源的服务器实例，并默认仅显示有客户端连接的服务器。</li>
+              <li>展开服务器可查看其连接的客户端及其本地转发目标 ("落地node")。</li>
+              <li>连接匹配: 客户端 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> 与服务器 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> (端口匹配; 主机匹配或服务器通配符监听)。</li>
               <li>客户端“本地目标”由其 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;target_addr&gt;</code> 解析。</li>
             </ul>
           </div>
@@ -362,6 +381,4 @@ export default function TopologyPage() {
     </AppLayout>
   );
 }
-    
-
     
