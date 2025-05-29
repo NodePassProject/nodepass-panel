@@ -10,7 +10,7 @@ import { AlertTriangle, Loader2, RefreshCw, Network, ServerIcon, SmartphoneIcon,
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tooltip, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { InstanceStatusBadge } from '@/components/nodepass/InstanceStatusBadge';
 import { cn } from "@/lib/utils";
@@ -292,19 +292,6 @@ const TopologyPage: NextPage = () => {
         console.warn(`Client element for ${client.id} not found in refs.`);
         return;
       }
-
-      // For SVG lines, positions should ideally be relative to the SVG container.
-      // If nodes are absolutely positioned within canvasRef, and SVG is overlaying canvasRef:
-      
-      const sRect = serverEl.getBoundingClientRect(); // These are viewport-relative
-      const cRect = clientEl.getBoundingClientRect(); // These are viewport-relative
-      const canvasRect = canvasRef.current!.getBoundingClientRect(); // Viewport-relative
-
-      // Calculate node centers relative to the top-left of the canvasRef
-      const sCenterX = (sRect.left - canvasRect.left) + sRect.width / 2;
-      const sCenterY = (sRect.top - canvasRect.top) + sRect.height / 2;
-      const cCenterX = (cRect.left - canvasRect.left) + cRect.width / 2;
-      const cCenterY = (cRect.top - canvasRect.top) + cRect.height / 2;
       
       // Use the node's state position for line calculation, assuming it's canvas-relative
       const x1_state = serverNode.position.x + NODE_WIDTH / 2;
@@ -321,15 +308,14 @@ const TopologyPage: NextPage = () => {
       });
     });
     setLines(newLines);
-  }, [selectedServerForGraph, clientsForSelectedServer, viewMode, nodeRefs]); // removed canvasRef from deps as it's a stable ref
+  }, [selectedServerForGraph, clientsForSelectedServer, viewMode, nodeRefs]);
 
 
   useEffect(() => {
     if (viewMode === 'graph' && selectedServerForGraph) {
-      // Delay slightly to ensure DOM elements are rendered and positions are updated.
       const timer = setTimeout(() => {
         calculateGraphLayoutAndLines();
-      }, 50); // A small delay like 50-100ms can help.
+      }, 50); 
       
       window.addEventListener('resize', calculateGraphLayoutAndLines);
       return () => {
@@ -346,20 +332,17 @@ const TopologyPage: NextPage = () => {
       .filter(c => c.connectedToServerId === server.id)
       .map((client, index) => ({
         ...client,
-        // Initial positions for clients relative to the server
         position: { 
-          x: 50 + GRAPH_CLIENT_OFFSET_X, // Server initial X + offset
-          y: 50 + (index * (NODE_HEIGHT_CLIENT + GRAPH_CLIENT_SPACING_Y)) // Server initial Y + stacked client offset
+          x: 50 + GRAPH_CLIENT_OFFSET_X, 
+          y: 50 + (index * (NODE_HEIGHT_CLIENT + GRAPH_CLIENT_SPACING_Y)) 
         }
       }));
     
-    // Center the server vertically based on number of clients
     const serverInitialY = 50 + (connectedClients.length > 0 ? (connectedClients.length -1) * (NODE_HEIGHT_CLIENT + GRAPH_CLIENT_SPACING_Y) / 2 : 0) - (NODE_HEIGHT_SERVER / 2) + (NODE_HEIGHT_CLIENT /2);
 
     setSelectedServerForGraph({...server, position: { x: 50, y: Math.max(50, serverInitialY) }});
     setClientsForSelectedServer(connectedClients);
     setViewMode('graph');
-    // Lines will be calculated by the useEffect hook watching viewMode and selectedServerForGraph
   };
 
   const handleBackToTable = () => {
@@ -415,7 +398,6 @@ const TopologyPage: NextPage = () => {
     const nodeWidth = nodeEl?.offsetWidth || NODE_WIDTH;
     const nodeHeight = nodeEl?.offsetHeight || (draggingNodeInfo.type === 'server' ? NODE_HEIGHT_SERVER : NODE_HEIGHT_CLIENT);
 
-    // Prevent dragging out of canvas bounds (considering scroll)
     newX = Math.max(0, Math.min(newX, canvasRef.current.scrollWidth - nodeWidth));
     newY = Math.max(0, Math.min(newY, canvasRef.current.scrollHeight - nodeHeight));
 
@@ -667,5 +649,3 @@ const TopologyPage: NextPage = () => {
 };
 
 export default TopologyPage;
-
-    
