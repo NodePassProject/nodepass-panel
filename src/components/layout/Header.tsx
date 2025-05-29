@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useApiConfig, type NamedApiConfig } from '@/hooks/use-api-key';
 import { useToast } from '@/hooks/use-toast';
-import { useRouter } from 'next/navigation';
+// Removed useRouter as window.location.href will be used
 
 interface HeaderProps {
   onManageApiConfigs: (configToEdit?: NamedApiConfig | null) => void;
@@ -32,7 +32,7 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
   const { setTheme, theme } = useTheme();
   const { apiConfigsList, activeApiConfig, setActiveApiConfigId } = useApiConfig();
   const { toast } = useToast();
-  const router = useRouter();
+  // const router = useRouter(); // No longer needed for this specific action
 
   const handleSwitchApiConfig = (id: string) => {
     const newActiveConf = apiConfigsList.find(c => c.id === id);
@@ -41,7 +41,8 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
       title: '活动连接已切换',
       description: `已连接到 “${newActiveConf?.name}”。`,
     });
-    router.push('/'); // Re-enable navigation to home page
+    // router.push('/'); // Re-enable navigation to home page
+    window.location.href = '/'; // Force a full page navigation to the root path
   };
 
   return (
