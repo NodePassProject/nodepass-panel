@@ -3,7 +3,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Moon, Sun, Settings, LogOut, PlusCircle, Edit3, Check, ListTree, Network, BarChartHorizontalBig, Home, Trash2 } from 'lucide-react';
+import { Moon, Sun, Settings, LogOut, PlusCircle, ListTree, Network, BarChartHorizontalBig, Home, Trash2, Edit3, Check } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import {
@@ -41,7 +41,7 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
       title: '活动连接已切换',
       description: `已连接到 “${newActiveConf?.name}”。`,
     });
-    router.push('/'); // 切换后导航到主页以刷新
+    router.push('/'); // Re-enable navigation to home page
   };
 
   return (
