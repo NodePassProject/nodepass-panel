@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -13,7 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Rss, ChevronRight, ChevronDown, Server, Smartphone, Filter, XCircle, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Rss, ChevronRight, ChevronDown, Server, Smartphone, Filter, XCircle, AlertTriangle, CheckCircle, Loader2 } from 'lucide-react';
 import type { Instance, InstanceEvent } from '@/types/nodepass';
 import { getEventsUrl } from '@/lib/api';
 import { InstanceStatusBadge } from './InstanceStatusBadge';
@@ -138,12 +139,20 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
         addEventToLog(errorEventToLog);
       }
     } else if (eventDataLine) {
-      const genericEvent: InstanceEvent = {
-        type: 'log',
-        data: `通用消息 (fetch): ${eventDataLine}`,
-        timestamp: new Date().toISOString()
-      };
-      addEventToLog(genericEvent);
+      // Handle plain messages without 'event: instance'
+      // This might include 'retry: XXXX' messages or other server hints
+      if (eventDataLine.startsWith('retry:')) {
+        // Potentially adjust reconnect delay based on server advice, though EventSource handles 'retry' natively.
+        // For fetch, this is informational unless we implement custom retry timing based on it.
+        // console.log('SSE server advised retry interval:', eventDataLine);
+      } else {
+        const genericEvent: InstanceEvent = {
+          type: 'log',
+          data: `通用消息 (fetch): ${eventDataLine}`,
+          timestamp: new Date().toISOString()
+        };
+        addEventToLog(genericEvent);
+      }
     }
   }, [addEventToLog]);
 
@@ -166,8 +175,8 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
     if (isInitialAttemptForCurrentApi) {
       setIsConnecting(true); // Show "连接中..." in CardDescription
       setUiConnectionStatus('connecting');
-      const connectingEvent: InstanceEvent = { type: 'log', data: `正在初始化事件流 (fetch) 到 ${eventsUrl} (携带 X-API-Key)...`, timestamp: new Date().toISOString() };
-      addEventToLog(connectingEvent);
+      // Only add "正在初始化" message to UI log for the very first attempt for this API config
+      addEventToLog({ type: 'log', data: `正在初始化事件流 (fetch) 到 ${eventsUrl} (携带 X-API-Key)...`, timestamp: new Date().toISOString() });
     }
     
     // Clear any pending reconnect timeout
@@ -202,8 +211,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       retryCountRef.current = 0; // Reset retry count on successful connection
 
       if (!hasLoggedInitialConnectionRef.current) {
-        const connectedEvent: InstanceEvent = { type: 'log', data: `事件流 (fetch) 已连接。等待事件... (目标: ${eventsUrl})`, timestamp: new Date().toISOString() };
-        addEventToLog(connectedEvent);
+        addEventToLog({ type: 'log', data: `事件流 (fetch) 已连接。等待事件... (目标: ${eventsUrl})`, timestamp: new Date().toISOString() });
         hasLoggedInitialConnectionRef.current = true;
       }
 
@@ -230,7 +238,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
 
         buffer += decoder.decode(value, { stream: true });
         const messageBlocks = buffer.split('\n\n');
-        buffer = messageBlocks.pop() || '';
+        buffer = messageBlocks.pop() || ''; // Keep the last partial message in buffer
 
         for (const block of messageBlocks) {
           if (block.trim() !== '') {
@@ -246,8 +254,8 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
          // If aborted by component unmount or new API, don't attempt reconnect from here
       } else {
         // console.error(`Fetch error during connectWithFetch:`, error);
-        if (!signal.aborted) {
-           scheduleReconnect(`网络或服务器错误: ${error.message}`);
+        if (!signal.aborted) { // Only schedule reconnect if not deliberately aborted by user action
+           scheduleReconnect(error.message || "未知错误");
         }
       }
     }
@@ -256,7 +264,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
 
 
   const scheduleReconnect = useCallback((reason: string) => {
-    if (abortControllerRef.current?.signal.aborted) return;
+    if (abortControllerRef.current?.signal.aborted) return; // Don't reconnect if intentionally aborted
 
     retryCountRef.current++;
     setIsConnected(false); // Ensure isConnected is false before retrying
@@ -269,12 +277,14 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
     if (reason.startsWith("服务器关闭")) {
       uiErrorMessage = `事件流连接已由服务器关闭。${RECONNECT_DELAY_MS / 1000}秒后尝试第 ${retryCountRef.current} 次重连... (目标: ${eventsUrl})`;
     } else {
-      uiErrorMessage = `无法建立 SSE 连接 (fetch) 到 ${eventsUrl}. 原因: ${reason.substring(0, 100)}... ${RECONNECT_DELAY_MS / 1000}秒后尝试第 ${retryCountRef.current} 次重连...`;
+      const corsHint = reason.toLowerCase().includes('failed to fetch') || reason.toLowerCase().includes('networkerror') 
+        ? '这通常由于目标服务器的CORS策略阻止了请求 (缺少 Access-Control-Allow-Origin 头部), 或网络连接问题。'
+        : '';
+      uiErrorMessage = `无法建立 SSE 连接 (fetch) 到 ${eventsUrl}. 原因: ${reason.substring(0, 100)}... ${corsHint} ${RECONNECT_DELAY_MS / 1000}秒后尝试第 ${retryCountRef.current} 次重连...`;
     }
     
     if (retryCountRef.current > 1) { // Show error in UI log only after the first silent retry fails
-      const errorEvent: InstanceEvent = { type: 'log', data: uiErrorMessage, timestamp: new Date().toISOString(), level: 'ERROR' };
-      addEventToLog(errorEvent);
+      addEventToLog({ type: 'log', data: uiErrorMessage, timestamp: new Date().toISOString(), level: 'ERROR' });
     } else {
       // console.log(`Silent retry attempt ${retryCountRef.current} for: ${reason}`);
     }
@@ -315,10 +325,11 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
         // console.log('Initial mount or re-attempt for existing API ID, not connected and no reconnect scheduled.');
         setIsConnecting(true);
         setUiConnectionStatus('connecting');
-        retryCountRef.current = 0;
+        retryCountRef.current = 0; // Reset retry count for fresh attempts
         connectWithFetch(true);
       }
     } else {
+      // API config is not valid, clear everything
       setEvents([]);
       setIsConnected(false);
       setIsConnecting(false);
@@ -335,7 +346,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
 
     return () => { // Cleanup function
       if (abortControllerRef.current && !abortControllerRef.current.signal.aborted) {
-        abortControllerRef.current.abort("Component unmounted");
+        abortControllerRef.current.abort("Component unmounted or dependencies changed");
         // Don't add to log here as it's a cleanup, not necessarily an error for the user
       }
       if (reconnectTimeoutRef.current) {
@@ -587,3 +598,5 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
   );
 }
 
+
+    
