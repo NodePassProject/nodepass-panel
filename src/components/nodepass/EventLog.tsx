@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Rss, ChevronRight, ChevronDown, Server, Smartphone, Filter, XCircle } from 'lucide-react';
 import type { Instance, InstanceEvent } from '@/types/nodepass';
-import { getEventsUrl } from '@/lib/api';
+import { getEventsUrl } from '@/lib/api'; // Assuming this still returns the direct URL
 import { InstanceStatusBadge } from './InstanceStatusBadge';
 
 interface EventLogProps {
@@ -48,7 +48,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
   const [selectedLogLevels, setSelectedLogLevels] = useState<Set<string>>(new Set());
 
   const processSseMessageData = useCallback((messageBlock: string) => {
-    let eventTypeFromServer = 'message'; 
+    let eventTypeFromServer = 'message'; // Default if no 'event:' line
     let eventDataLine = '';
 
     const lines = messageBlock.split('\n');
@@ -74,7 +74,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
           case 'update':
           case 'delete':
             frontendEventType = serverEventPayload.type;
-            frontendEventData = instanceDetailsPayload || serverEventPayload.data || {}; // Prefer instanceDetails if present
+            frontendEventData = instanceDetailsPayload || serverEventPayload.data || {};
             break;
           case 'log':
             frontendEventType = 'log';
@@ -87,7 +87,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
             frontendEventType = 'shutdown';
             frontendEventData = "主控服务即将关闭。事件流已停止。";
             if (abortControllerRef.current) {
-              abortControllerRef.current.abort();
+              abortControllerRef.current.abort("Server shutdown event received");
             }
             break;
           default:
@@ -102,8 +102,8 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
         
         const newEventToLog: InstanceEvent = {
           type: frontendEventType,
-          data: frontendEventData, // This is the primary data (string for log, object for instance events)
-          instanceDetails: instanceDetailsPayload, // This specifically holds instance details
+          data: frontendEventData,
+          instanceDetails: instanceDetailsPayload,
           level: parsedLevel,
           timestamp: serverEventPayload.time || new Date().toISOString(),
         };
@@ -113,7 +113,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
         const errorEventToLog: InstanceEvent = { type: 'log', data: `解析事件错误 (fetch): ${eventDataLine}`, timestamp: new Date().toISOString() };
         setEvents((prevEvents) => [errorEventToLog, ...prevEvents.slice(0, 199)]);
       }
-    } else if (eventDataLine) { // Generic message handling (not event: instance)
+    } else if (eventDataLine) { // Generic message handling
       const genericEvent: InstanceEvent = {
         type: 'log', 
         data: `通用消息 (fetch): ${eventDataLine}`,
@@ -133,12 +133,12 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
     }
 
     if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
+      abortControllerRef.current.abort("Reconnecting");
     }
     abortControllerRef.current = new AbortController();
     const signal = abortControllerRef.current.signal;
 
-    const eventsUrl = getEventsUrl(apiRoot);
+    const eventsUrl = getEventsUrl(apiRoot); // Direct URL to NodePass events
     
     setEvents(prev => [{ type: 'log', data: `正在初始化事件流 (fetch) 到 ${eventsUrl} (携带 X-API-Key)...`, timestamp: new Date().toISOString() }, ...prev.filter(e => typeof e.data === 'string' ? (!e.data.startsWith('正在初始化') && !e.data.includes('错误') && !e.data.includes('已连接') && !e.data.includes('已禁用')) : true )]);
     setIsConnecting(true);
@@ -186,14 +186,16 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
           setIsConnecting(false);
           setEvents(prev => [{ type: 'log', data: `事件流 (fetch) 连接已由服务器关闭。5秒后尝试重连... (目标: ${eventsUrl})`, timestamp: new Date().toISOString() }, ...prev]);
           if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-          reconnectTimeoutRef.current = setTimeout(() => connectWithFetch(), 5000);
+          if (!signal.aborted) { // Only reconnect if not deliberately aborted
+            reconnectTimeoutRef.current = setTimeout(() => connectWithFetch(), 5000);
+          }
           break;
         }
 
         buffer += decoder.decode(value, { stream: true });
         
-        const messageBlocks = buffer.split('\n\n'); // SSE messages are separated by double newlines
-        buffer = messageBlocks.pop() || ''; // Keep the last incomplete message in buffer
+        const messageBlocks = buffer.split('\n\n');
+        buffer = messageBlocks.pop() || ''; 
 
         for (const block of messageBlocks) {
           if (block.trim() !== '') {
@@ -207,7 +209,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       let uiErrorMessage = `SSE 连接 (fetch) 尝试失败. 目标: ${eventsUrl}.`;
 
       if (signal.aborted) {
-        uiErrorMessage = `SSE 连接 (fetch) 已中止 (由客户端发起)。`;
+        uiErrorMessage = `SSE 连接 (fetch) 已中止 (原因: ${signal.reason || '未知'})。`;
       } else {
         let reasonMessage = `原因: ${error.message || '未知网络错误'}.`;
         if (error.message?.toLowerCase().includes('failed to fetch') || error.message?.toLowerCase().includes('network error')) {
@@ -216,17 +218,19 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
         } else {
            uiErrorMessage = `SSE 连接 (fetch) 发生错误. ${reasonMessage} 5秒后尝试重连...`;
         }
-        if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = setTimeout(() => connectWithFetch(), 5000);
+         if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+         if (!signal.aborted) { // Only reconnect if not deliberately aborted
+            reconnectTimeoutRef.current = setTimeout(() => connectWithFetch(), 5000);
+         }
       }
-      console.error(`EventLog: ${uiErrorMessage}`, error); // Log the detailed error
+      console.error(`EventLog: ${uiErrorMessage}`, error.name !== 'AbortError' ? error : ''); 
       setEvents(prev => [{ type: 'log', data: uiErrorMessage, timestamp: new Date().toISOString() }, ...prev.slice(0,199)]);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiId, apiRoot, apiToken, apiName, processSseMessageData]); 
 
   useEffect(() => {
-    if (apiId && apiRoot && apiToken) {
+    if (apiId && apiRoot && apiToken && apiName) {
       connectWithFetch();
     } else {
       setEvents(prev => [{ type: 'log', data: '事件流：等待有效的API配置...', timestamp: new Date().toISOString() }, ...prev.slice(0,199)]);
@@ -236,7 +240,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
 
     return () => {
       if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
+        abortControllerRef.current.abort("Component unmounted or dependencies changed");
         setEvents(prev => [{ type: 'log', data: `事件流 (fetch) 连接因组件卸载已断开。`, timestamp: new Date().toISOString() }, ...prev.slice(0,199)]);
       }
       if (reconnectTimeoutRef.current) {
@@ -246,7 +250,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       setIsConnecting(false);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiId, apiRoot, apiToken, connectWithFetch]);
+  }, [apiId, apiRoot, apiToken, apiName]); // connectWithFetch is not in dep array due to its own useCallback
 
   const getBadgeTextAndVariant = (type: InstanceEvent['type']): { text: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' | 'accent' } => {
     switch (type) {
@@ -264,7 +268,6 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
   const isExpandable = (event: InstanceEvent): boolean => {
     if (event.instanceDetails) return true;
     if (event.type === 'log' && typeof event.data === 'string' && event.data.length > 100) return true; 
-    // Check if data is an object and not null, used for non-instanceDetails events (like initial/create/etc. if instanceDetails is missing)
     if (['initial', 'create', 'update', 'delete'].includes(event.type) && typeof event.data === 'object' && event.data !== null && Object.keys(event.data).length > 0 && !event.instanceDetails) return true;
     return false;
   };
@@ -380,13 +383,13 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
           </div>
         </div>
       </CardHeader>
-      <CardContent> {/* CardContent now only contains the ScrollArea */}
+      <CardContent>
         <ScrollArea className="h-80 w-full rounded-md border p-3 bg-muted/20 text-xs" ref={scrollAreaRef}>
           {filteredEvents.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">无匹配事件。</p>}
           {filteredEvents.map((event, index) => {
             const isExpanded = expandedIndex === index;
             const { text: badgeText, variant: badgeVariant } = getBadgeTextAndVariant(event.type);
-            const instance = event.instanceDetails; // Use instanceDetails for structured instance data
+            const instance = event.instanceDetails;
             const canExpand = isExpandable(event);
 
             return (
@@ -433,7 +436,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
                         <InstanceStatusBadge status={instance.status} />
                         <span className="font-mono truncate text-foreground/70" title={instance.url}>{instance.url.length > 30 ? instance.url.substring(0, 27) + '...' : instance.url}</span>
                       </div>
-                    ) : ( // For log events or if instanceDetails is not present
+                    ) : (
                       <p className="font-mono break-words whitespace-pre-wrap text-foreground/90 leading-relaxed">
                         {typeof event.data === 'string' && (isExpanded || !canExpand || event.data.length <= 70) ? event.data : `${String(event.data).substring(0, 70)}...`}
                       </p>
@@ -445,15 +448,15 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
                 </div>
                 {isExpanded && canExpand && (
                   <div className="mt-2 ml-8 pl-4 border-l-2 border-muted/50 py-2 bg-background/30 rounded-r-md">
-                    {instance ? ( // If instanceDetails exists, show it as JSON
+                    {instance ? (
                       <pre className="text-xs p-2 rounded-md overflow-x-auto bg-muted/40 whitespace-pre-wrap break-all">
                         {JSON.stringify(instance, null, 2)}
                       </pre>
-                    ) : event.type === 'log' && typeof event.data === 'string' ? ( // For log events, show full string data if expandable
+                    ) : event.type === 'log' && typeof event.data === 'string' ? (
                       <p className="font-mono break-all whitespace-pre-wrap text-foreground/90 leading-relaxed text-xs">
                         {event.data}
                       </p>
-                    ) : typeof event.data === 'object' && event.data !== null && Object.keys(event.data).length > 0 ? ( // Fallback for other object data
+                    ) : typeof event.data === 'object' && event.data !== null && Object.keys(event.data).length > 0 ? (
                        <pre className="text-xs p-2 rounded-md overflow-x-auto bg-muted/40 whitespace-pre-wrap break-all">
                         {JSON.stringify(event.data, null, 2)}
                       </pre>
@@ -470,4 +473,3 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
     </Card>
   );
 }
-
