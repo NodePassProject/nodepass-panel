@@ -6,7 +6,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useApiConfig } from '@/hooks/use-api-key';
 import { nodePassApi } from '@/lib/api';
 import type { Instance } from '@/types/nodepass';
-import { AlertTriangle, Loader2, RefreshCw, Info, ServerIcon, SmartphoneIcon, NetworkIcon, Route, Move } from 'lucide-react';
+import { AlertTriangle, Loader2, RefreshCw, Network, ServerIcon, SmartphoneIcon, Move, Link2, Link2Off } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,17 +20,29 @@ interface InstanceWithApiDetails extends Instance {
   apiName: string;
 }
 
-interface ProcessedClientInstance extends InstanceWithApiDetails {
-  clientConnectsToServerAddress: string | null; // Parsed tunnel_addr of the client (points to server)
-  localTargetAddress: string | null;          // Parsed target_addr of the client ("落地node")
+interface Position {
+  x: number;
+  y: number;
 }
 
-interface ProcessedServerInstance extends InstanceWithApiDetails {
-  serverListeningAddress: string | null; // Parsed tunnel_addr of the server (listens for clients)
-  serverForwardsToAddress: string | null; // Parsed target_addr of the server (forwards to this)
-  connectedClients: ProcessedClientInstance[];
-  position: { x: number; y: number }; // For draggable position
+interface NodeBase extends InstanceWithApiDetails {
+  position: Position;
 }
+
+interface ServerNode extends NodeBase {
+  type: 'server';
+  serverListeningAddress: string | null;
+  serverForwardsToAddress: string | null;
+}
+
+interface ClientNode extends NodeBase {
+  type: 'client';
+  clientConnectsToServerAddress: string | null;
+  localTargetAddress: string | null;
+  connectedToServerId: string | null;
+}
+
+type DraggableNode = ServerNode | ClientNode;
 
 interface ConnectionLine {
   id: string;
@@ -38,37 +50,30 @@ interface ConnectionLine {
   y1: number;
   x2: number;
   y2: number;
-  type: 'intra-api' | 'inter-api'; // To differentiate line colors
+  type: 'intra-api' | 'inter-api';
 }
 
 interface DraggingNodeInfo {
-  id: string; // Server ID being dragged
+  id: string;
+  type: 'server' | 'client';
   initialMouseX: number;
   initialMouseY: number;
   initialNodeX: number;
   initialNodeY: number;
 }
 
-// Helper function to parse the tunnel_addr from a NodePass URL
 function parseTunnelAddr(urlString: string): string | null {
   try {
-    // Try parsing as a full URL first (handles client://hostname:port/target scenarios)
     const url = new URL(urlString);
-    return url.host; // host includes hostname and port
+    return url.host;
   } catch (e) {
-    // Fallback for server URLs like server://ip:port/target
     const schemeSeparator = "://";
     const schemeIndex = urlString.indexOf(schemeSeparator);
     if (schemeIndex === -1) return null;
-
     const restOfString = urlString.substring(schemeIndex + schemeSeparator.length);
-    
-    // Find the end of the tunnel_addr part
     const pathSeparatorIndex = restOfString.indexOf('/');
     const querySeparatorIndex = restOfString.indexOf('?');
-    
     let endOfTunnelAddr = -1;
-
     if (pathSeparatorIndex !== -1 && querySeparatorIndex !== -1) {
       endOfTunnelAddr = Math.min(pathSeparatorIndex, querySeparatorIndex);
     } else if (pathSeparatorIndex !== -1) {
@@ -76,154 +81,145 @@ function parseTunnelAddr(urlString: string): string | null {
     } else if (querySeparatorIndex !== -1) {
       endOfTunnelAddr = querySeparatorIndex;
     }
-    
     return endOfTunnelAddr !== -1 ? restOfString.substring(0, endOfTunnelAddr) : restOfString;
   }
 }
 
-// Helper function to parse the target_addr from a NodePass URL
 function parseTargetAddr(urlString: string): string | null {
   const schemeSeparator = "://";
   const schemeIndex = urlString.indexOf(schemeSeparator);
-  if (schemeIndex === -1) return null; // No scheme found
-
+  if (schemeIndex === -1) return null;
   const restOfString = urlString.substring(schemeIndex + schemeSeparator.length);
   const pathSeparatorIndex = restOfString.indexOf('/');
-  if (pathSeparatorIndex === -1) return null; // No path separator after tunnel_addr
-
-  // Target address is between the first '/' and the '?'
+  if (pathSeparatorIndex === -1) return null;
   const targetAndQuery = restOfString.substring(pathSeparatorIndex + 1);
   const querySeparatorIndex = targetAndQuery.indexOf('?');
-  
   return querySeparatorIndex !== -1 ? targetAndQuery.substring(0, querySeparatorIndex) : targetAndQuery;
 }
 
-// Helper function to split host and port, handling IPv6 addresses
 function splitHostPort(address: string | null): { host: string | null; port: string | null } {
   if (!address) return { host: null, port: null };
-
-  // Regex for IPv6 with port: [IPv6]:port
   const ipv6WithPortMatch = address.match(/^\[(.+)\]:(\d+)$/);
   if (ipv6WithPortMatch) {
     return { host: ipv6WithPortMatch[1], port: ipv6WithPortMatch[2] };
   }
-
-  // For IPv4 or hostname with port
   const lastColonIndex = address.lastIndexOf(':');
-  // If no colon, or if it's an IPv6 address without brackets (less common for host:port)
   if (lastColonIndex === -1 || address.substring(0, lastColonIndex).includes(':')) {
-    return { host: address, port: null }; // Assume it's just a host or malformed
+    return { host: address, port: null };
   }
-  
   const potentialHost = address.substring(0, lastColonIndex);
   const potentialPort = address.substring(lastColonIndex + 1);
-
-  // Check if potentialPort is a valid port number
   if (potentialPort && !isNaN(parseInt(potentialPort, 10)) && parseInt(potentialPort, 10).toString() === potentialPort) {
     return { host: potentialHost, port: potentialPort };
   }
-  
-  return { host: address, port: null }; // Fallback if port parsing fails
+  return { host: address, port: null };
 }
 
+const NODE_WIDTH = 250; // Approximate width of a node card
+const NODE_HEIGHT = 130; // Approximate height of a node card
+const HORIZONTAL_SPACING = 100;
+const VERTICAL_SPACING = 50;
+const SERVER_COLUMN_X = 50;
+const CLIENT_COLUMN_X = SERVER_COLUMN_X + NODE_WIDTH + HORIZONTAL_SPACING;
 
 const TopologyPage: NextPage = () => {
   const router = useRouter();
   const { apiConfigsList, isLoading: isLoadingApiConfig, getApiRootUrl, getToken } = useApiConfig();
 
-  const [processedServers, setProcessedServers] = useState<ProcessedServerInstance[]>([]);
+  const [serverNodes, setServerNodes] = useState<ServerNode[]>([]);
+  const [clientNodes, setClientNodes] = useState<ClientNode[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [fetchErrors, setFetchErrors] = useState<Map<string, string>>(new Map());
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [lines, setLines] = useState<ConnectionLine[]>([]);
-  
+
   const nodeRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const svgRef = useRef<SVGSVGElement>(null);
-  const canvasRef = useRef<HTMLDivElement>(null); // Ref for the canvas/drawing area
+  const canvasRef = useRef<HTMLDivElement>(null);
 
   const [draggingNodeInfo, setDraggingNodeInfo] = useState<DraggingNodeInfo | null>(null);
 
-
   const processAllInstanceData = useCallback((allInstances: InstanceWithApiDetails[]) => {
-    const serverInstancesRaw = allInstances.filter(inst => inst.type === 'server');
-    const clientInstancesRaw = allInstances.filter(inst => inst.type === 'client');
-    let yOffset = 20; // Initial Y offset for server nodes
-    const xOffset = 50; // Initial X offset for server nodes
-    const serverNodeBaseHeight = 100; // Approximate height of server info box
-    const clientNodeHeight = 80; // Approximate height of a client box
-    const verticalSpacing = 40; // spacing between server blocks
+    let yPosServer = 50;
+    const yPosClientMap = new Map<string, number>(); // Tracks Y position for clients of a specific server
 
+    const sNodes: ServerNode[] = [];
+    const cNodes: ClientNode[] = [];
 
-    const sNodes: ProcessedServerInstance[] = serverInstancesRaw.map((serverInst, index) => {
-      const serverOwnTunnelAddr = parseTunnelAddr(serverInst.url); // Server listens on this
-      const { host: serverHostToMatch, port: serverPortToMatch } = splitHostPort(serverOwnTunnelAddr);
+    const rawServers = allInstances.filter(inst => inst.type === 'server');
+    const rawClients = allInstances.filter(inst => inst.type === 'client');
 
-      const connectedC: ProcessedClientInstance[] = clientInstancesRaw
-        .map(clientInst => {
-          const clientConnectsToServerAddrFull = parseTunnelAddr(clientInst.url); // Client connects to this
-          if (!clientConnectsToServerAddrFull) return null;
-
-          const { host: clientHostConnectsTo, port: clientPortConnectsTo } = splitHostPort(clientConnectsToServerAddrFull);
-          
-          // Match ports first
-          if (serverPortToMatch && clientPortConnectsTo && serverPortToMatch === clientPortConnectsTo) {
-            // Handle server wildcard IPs
-            const isServerHostWildcard = serverHostToMatch === '0.0.0.0' || serverHostToMatch === '::' || serverHostToMatch === '' || serverHostToMatch === null;
-            if (isServerHostWildcard || clientHostConnectsTo === serverHostToMatch) {
-              return {
-                ...clientInst,
-                clientConnectsToServerAddress: clientConnectsToServerAddrFull,
-                localTargetAddress: parseTargetAddr(clientInst.url),
-              };
-            }
-          }
-          return null;
-        })
-        .filter((client): client is ProcessedClientInstance => client !== null);
-      
-      const currentServerPosition = { x: xOffset, y: yOffset };
-      // Calculate server block height based on number of clients
-      const serverBlockHeight = serverNodeBaseHeight + (connectedC.length * clientNodeHeight) + (connectedC.length > 0 ? 20 : 0);
-      yOffset += serverBlockHeight + verticalSpacing; 
-
-      return {
-        ...serverInst,
-        serverListeningAddress: serverOwnTunnelAddr,
-        serverForwardsToAddress: parseTargetAddr(serverInst.url),
-        connectedClients: connectedC,
-        position: currentServerPosition 
-      };
+    rawServers.forEach(sInst => {
+      sNodes.push({
+        ...sInst,
+        type: 'server',
+        position: { x: SERVER_COLUMN_X, y: yPosServer },
+        serverListeningAddress: parseTunnelAddr(sInst.url),
+        serverForwardsToAddress: parseTargetAddr(sInst.url),
+      });
+      yPosServer += NODE_HEIGHT + VERTICAL_SPACING;
     });
-    setProcessedServers(sNodes);
+
+    rawClients.forEach(cInst => {
+      const clientConnectsTo = parseTunnelAddr(cInst.url);
+      const { host: clientHostConnectsTo, port: clientPortConnectsTo } = splitHostPort(clientConnectsTo);
+      let connectedServer: ServerNode | undefined = undefined;
+
+      for (const sNode of sNodes) {
+        const { host: serverHostListensOn, port: serverPortListensOn } = splitHostPort(sNode.serverListeningAddress);
+        if (clientPortConnectsTo && serverPortListensOn && clientPortConnectsTo === serverPortListensOn) {
+          const isServerHostWildcard = serverHostListensOn === '0.0.0.0' || serverHostListensOn === '::' || serverHostListensOn === '' || serverHostListensOn === null;
+          if (isServerHostWildcard || clientHostConnectsTo === serverHostListensOn) {
+            connectedServer = sNode;
+            break;
+          }
+        }
+      }
+      
+      let clientYPos = yPosServer + 50; // Default for unconnected clients
+      if (connectedServer) {
+          const serverId = connectedServer.id;
+          const currentClientYOffset = yPosClientMap.get(serverId) || connectedServer.position.y;
+          clientYPos = currentClientYOffset;
+          yPosClientMap.set(serverId, currentClientYOffset + NODE_HEIGHT + VERTICAL_SPACING / 3);
+      }
+
+
+      cNodes.push({
+        ...cInst,
+        type: 'client',
+        position: { x: CLIENT_COLUMN_X, y: clientYPos },
+        clientConnectsToServerAddress: clientConnectsTo,
+        localTargetAddress: parseTargetAddr(cInst.url),
+        connectedToServerId: connectedServer?.id || null,
+      });
+       if(!connectedServer) yPosServer += NODE_HEIGHT + VERTICAL_SPACING; // Space out unconnected clients
+    });
+
+    setServerNodes(sNodes);
+    setClientNodes(cNodes);
     setLastRefreshed(new Date());
   }, []);
 
   const fetchDataAndProcess = useCallback(async () => {
-    if (isLoadingApiConfig) {
-      setIsLoadingData(false);
-      setProcessedServers([]);
-      setLines([]);
-      return;
-    }
+    if (isLoadingApiConfig) return;
     if (apiConfigsList.length === 0) {
       setIsLoadingData(false);
       setFetchErrors(new Map().set("global", "无API连接，请先添加。"));
-      setProcessedServers([]);
-      setLines([]);
+      setServerNodes([]); setClientNodes([]); setLines([]);
       return;
     }
 
     setIsLoadingData(true);
     setFetchErrors(new Map());
     let combinedInstances: InstanceWithApiDetails[] = [];
-    let currentErrors = new Map<string, string>();
+    const currentErrors = new Map<string, string>();
 
     for (const config of apiConfigsList) {
       const apiRoot = getApiRootUrl(config.id);
       const token = getToken(config.id);
-
       if (!apiRoot || !token) {
-        currentErrors.set(config.id, `API配置 "${config.name}" 无效或不完整。`);
+        currentErrors.set(config.id, `API配置 "${config.name}" 无效。`);
         continue;
       }
       try {
@@ -243,79 +239,77 @@ const TopologyPage: NextPage = () => {
   }, [fetchDataAndProcess]);
 
   const calculateLines = useCallback(() => {
-    if (!svgRef.current || !canvasRef.current || processedServers.length === 0) {
+    if (!svgRef.current || !canvasRef.current || (serverNodes.length === 0 && clientNodes.length === 0)) {
       setLines([]);
       return;
     }
     const newLines: ConnectionLine[] = [];
+    clientNodes.forEach(client => {
+      if (client.connectedToServerId) {
+        const clientEl = nodeRefs.current.get(`client-${client.id}`);
+        const serverEl = nodeRefs.current.get(`server-${client.connectedToServerId}`);
+        const serverNode = serverNodes.find(s => s.id === client.connectedToServerId);
 
-    processedServers.forEach(server => {
-      const serverNodeEl = nodeRefs.current.get(`server-${server.id}`);
-      if (!serverNodeEl) return;
+        if (clientEl && serverEl && serverNode) {
+          const clientRect = clientEl.getBoundingClientRect();
+          const serverRect = serverEl.getBoundingClientRect();
+          const canvasRect = canvasRef.current!.getBoundingClientRect();
 
-      const serverInfoBox = serverNodeEl.querySelector<HTMLDivElement>('[data-role="server-info-box"]');
-      const serverInfoBoxHeight = serverInfoBox ? serverInfoBox.offsetHeight : 50; 
-
-      const serverAttachX = server.position.x + serverNodeEl.offsetWidth / 2;
-      const serverAttachY = server.position.y + serverInfoBoxHeight;
-
-
-      server.connectedClients.forEach(client => {
-        const clientNodeEl = nodeRefs.current.get(`client-${client.id}`);
-        if (!clientNodeEl) return;
-        
-        const clientAbsoluteX = server.position.x + clientNodeEl.offsetLeft + clientNodeEl.offsetWidth / 2;
-        const clientAbsoluteY = server.position.y + clientNodeEl.offsetTop;
-
-        newLines.push({
-          id: `line-${server.id}-${client.id}`,
-          x1: serverAttachX,
-          y1: serverAttachY,
-          x2: clientAbsoluteX,
-          y2: clientAbsoluteY,
-          type: server.apiId === client.apiId ? 'intra-api' : 'inter-api',
-        });
-      });
+          // Calculate connection points (centers of right/left edges)
+          // Client's left edge center
+          const x1 = client.position.x; 
+          const y1 = client.position.y + clientRect.height / 2;
+          // Server's right edge center
+          const x2 = serverNode.position.x + serverRect.width;
+          const y2 = serverNode.position.y + serverRect.height / 2;
+          
+          newLines.push({
+            id: `line-${client.id}-${serverNode.id}`,
+            x1, y1, x2, y2,
+            type: client.apiId === serverNode.apiId ? 'intra-api' : 'inter-api',
+          });
+        }
+      }
     });
     setLines(newLines);
-  }, [processedServers, nodeRefs]);
+  }, [serverNodes, clientNodes, nodeRefs]);
 
   useEffect(() => {
-    if (!isLoadingData && processedServers.length > 0) {
-      const timer = setTimeout(calculateLines, 250); 
+    if (!isLoadingData && (serverNodes.length > 0 || clientNodes.length > 0)) {
+      const timer = setTimeout(calculateLines, 150); // Delay to allow DOM to render
       window.addEventListener('resize', calculateLines);
       return () => {
         clearTimeout(timer);
         window.removeEventListener('resize', calculateLines);
       };
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoadingData, processedServers, calculateLines, draggingNodeInfo]);
+  }, [isLoadingData, serverNodes, clientNodes, calculateLines, draggingNodeInfo]);
 
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>, serverId: string) => {
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>, nodeId: string, nodeType: 'server' | 'client') => {
     e.preventDefault();
-    const serverNodeEl = nodeRefs.current.get(`server-${serverId}`);
-    const server = processedServers.find(s => s.id === serverId);
+    e.stopPropagation();
+    const node = nodeType === 'server' ? serverNodes.find(s => s.id === nodeId) : clientNodes.find(c => c.id === nodeId);
+    if (!node || !canvasRef.current) return;
 
-    if (!server || !serverNodeEl || !canvasRef.current) return;
-    
     const canvasRect = canvasRef.current.getBoundingClientRect();
     const mouseXInCanvas = e.clientX - canvasRect.left;
     const mouseYInCanvas = e.clientY - canvasRect.top;
-    
+
     setDraggingNodeInfo({
-      id: serverId,
+      id: nodeId,
+      type: nodeType,
       initialMouseX: mouseXInCanvas,
       initialMouseY: mouseYInCanvas,
-      initialNodeX: server.position.x,
-      initialNodeY: server.position.y,
+      initialNodeX: node.position.x,
+      initialNodeY: node.position.y,
     });
   };
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (!draggingNodeInfo || !canvasRef.current) return;
     e.preventDefault();
-    
+
     const canvasRect = canvasRef.current.getBoundingClientRect();
     const mouseXInCanvas = e.clientX - canvasRect.left;
     const mouseYInCanvas = e.clientY - canvasRect.top;
@@ -326,19 +320,18 @@ const TopologyPage: NextPage = () => {
     let newX = draggingNodeInfo.initialNodeX + dx;
     let newY = draggingNodeInfo.initialNodeY + dy;
     
-    const serverNodeEl = nodeRefs.current.get(`server-${draggingNodeInfo.id}`);
-    const nodeWidth = serverNodeEl?.offsetWidth || 256;
-    const nodeHeight = serverNodeEl?.offsetHeight || 100;
+    const nodeEl = nodeRefs.current.get(`${draggingNodeInfo.type}-${draggingNodeInfo.id}`);
+    const nodeWidth = nodeEl?.offsetWidth || NODE_WIDTH;
+    const nodeHeight = nodeEl?.offsetHeight || NODE_HEIGHT;
 
     newX = Math.max(0, Math.min(newX, canvasRef.current.scrollWidth - nodeWidth));
     newY = Math.max(0, Math.min(newY, canvasRef.current.scrollHeight - nodeHeight));
 
-
-    setProcessedServers(prevServers =>
-      prevServers.map(s =>
-        s.id === draggingNodeInfo.id ? { ...s, position: { x: newX, y: newY } } : s
-      )
-    );
+    if (draggingNodeInfo.type === 'server') {
+      setServerNodes(prev => prev.map(s => s.id === draggingNodeInfo.id ? { ...s, position: { x: newX, y: newY } } : s));
+    } else {
+      setClientNodes(prev => prev.map(c => c.id === draggingNodeInfo.id ? { ...c, position: { x: newX, y: newY } } : c));
+    }
   }, [draggingNodeInfo, nodeRefs]);
 
   const handleMouseUp = useCallback(() => {
@@ -356,6 +349,68 @@ const TopologyPage: NextPage = () => {
     }
   }, [draggingNodeInfo, handleMouseMove, handleMouseUp]);
 
+  const renderNode = (node: DraggableNode) => {
+    const Icon = node.type === 'server' ? ServerIcon : SmartphoneIcon;
+    const bgColor = node.type === 'server' ? 'bg-primary/10 border-primary/30' : 'bg-accent/10 border-accent/30';
+    const title = node.type === 'server' ? '服务器实例' : '客户端实例';
+
+    return (
+      <Card
+        key={`${node.type}-${node.id}`}
+        ref={el => nodeRefs.current.set(`${node.type}-${node.id}`, el)}
+        className={cn(
+          "absolute shadow-md hover:shadow-lg transition-shadow cursor-grab p-3 rounded-lg",
+          "w-[250px] h-auto min-h-[120px]", // Fixed width, auto height
+          bgColor
+        )}
+        style={{
+          left: `${node.position.x}px`,
+          top: `${node.position.y}px`,
+          zIndex: draggingNodeInfo?.id === node.id ? 10 : 1,
+          userSelect: 'none',
+        }}
+        onMouseDown={(e) => handleMouseDown(e, node.id, node.type)}
+      >
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center gap-2 mb-1.5">
+              <Move className="h-4 w-4 text-muted-foreground hover:text-primary cursor-grab flex-shrink-0" />
+              <Icon className={`h-5 w-5 ${node.type === 'server' ? 'text-primary' : 'text-accent'} flex-shrink-0`} />
+              <h3 className="font-semibold text-sm truncate" title={node.apiName}>
+                {node.apiName}
+              </h3>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-xs break-all text-xs">
+            <p>来源 API: {node.apiName} (ID: {node.apiId})</p>
+            <p>{title} ID: {node.id}</p>
+            <p>URL: {node.url}</p>
+          </TooltipContent>
+        </Tooltip>
+        <div className="text-xs space-y-0.5 text-muted-foreground">
+          <div className="flex items-center">
+            <InstanceStatusBadge status={node.status} />
+            <span className="ml-2 text-xs">(ID: {node.id.substring(0, 8)}...)</span>
+          </div>
+          {node.type === 'server' && (
+            <>
+              <p className="truncate" title={node.serverListeningAddress || 'N/A'}>监听: <span className="font-mono">{node.serverListeningAddress || 'N/A'}</span></p>
+              <p className="truncate" title={node.serverForwardsToAddress || 'N/A'}>转发至: <span className="font-mono">{node.serverForwardsToAddress || 'N/A'}</span></p>
+            </>
+          )}
+          {node.type === 'client' && (
+            <>
+              <p className="truncate" title={node.clientConnectsToServerAddress || 'N/A'}>连接至: <span className="font-mono">{node.clientConnectsToServerAddress || 'N/A'}</span></p>
+              <p className="truncate text-green-600 dark:text-green-400" title={node.localTargetAddress || 'N/A'}>
+                <Link2 className="inline-block h-3 w-3 mr-1"/>
+                落地: <span className="font-mono">{node.localTargetAddress || 'N/A'}</span>
+              </p>
+            </>
+          )}
+        </div>
+      </Card>
+    );
+  };
 
   if (isLoadingApiConfig) {
     return <AppLayout><div className="text-center py-10"><Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" /><p>加载API配置...</p></div></AppLayout>;
@@ -372,23 +427,23 @@ const TopologyPage: NextPage = () => {
       </AppLayout>
     );
   }
-  
-  const serversWithClients = processedServers.filter(s => s.connectedClients.length > 0);
+
+  const unconnectedClients = clientNodes.filter(c => !c.connectedToServerId);
 
   return (
     <AppLayout>
       <TooltipProvider delayDuration={300}>
         <div className="flex flex-col h-full">
           <div className="flex justify-between items-center mb-6">
-            <h1 className="text-2xl sm:text-3xl font-bold">实例连接拓扑 (服务器为中心)</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold">实例连接拓扑图</h1>
             <div className="flex items-center gap-2">
               {lastRefreshed && <span className="text-xs text-muted-foreground">刷新于: {lastRefreshed.toLocaleTimeString()}</span>}
               <Button variant="outline" onClick={fetchDataAndProcess} disabled={isLoadingData} size="sm">
                 <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingData ? 'animate-spin' : ''}`} />
                 {isLoadingData ? '刷新中...' : '刷新'}
               </Button>
-               <Button variant="outline" onClick={calculateLines} disabled={isLoadingData} size="sm" title="重新计算连线">
-                <NetworkIcon className="mr-2 h-4 w-4" />
+              <Button variant="outline" onClick={calculateLines} disabled={isLoadingData} size="sm" title="重新计算连线">
+                <Network className="mr-2 h-4 w-4" />
                 布局
               </Button>
             </div>
@@ -415,17 +470,18 @@ const TopologyPage: NextPage = () => {
             </div>
           )}
 
-          {!isLoadingData && serversWithClients.length === 0 && (
+          {!isLoadingData && serverNodes.length === 0 && clientNodes.length === 0 && (
              <Card className="text-center py-10 shadow-lg flex-grow flex flex-col justify-center items-center bg-card">
-              <CardHeader><CardTitle>无连接数据显示</CardTitle></CardHeader>
-              <CardContent><p className="text-muted-foreground">{apiConfigsList.length > 0 ? "当前所有服务器实例均无连接的客户端。" : "请先配置API连接。"}</p></CardContent>
+              <CardHeader><CardTitle>无数据显示</CardTitle></CardHeader>
+              <CardContent><p className="text-muted-foreground">{apiConfigsList.length > 0 ? "未找到任何服务器或客户端实例。" : "请先配置API连接。"}</p></CardContent>
             </Card>
           )}
           
           <div 
             ref={canvasRef}
             id="topology-canvas"
-            className="relative flex-grow border rounded-lg p-4 bg-muted/10 overflow-auto min-h-[600px] w-full" 
+            className="relative flex-grow border rounded-lg p-4 bg-muted/5 overflow-auto min-h-[calc(100vh-20rem)] w-full" 
+            style={{ touchAction: 'none' }} // Important for preventing browser default touch actions like scrolling during drag
           >
             <svg ref={svgRef} className="absolute inset-0 w-full h-full pointer-events-none z-0">
               <defs>
@@ -450,99 +506,53 @@ const TopologyPage: NextPage = () => {
               ))}
             </svg>
             
-            {serversWithClients.map((server) => (
-              <div
-                key={server.id}
-                ref={el => nodeRefs.current.set(`server-${server.id}`, el)}
-                className="absolute bg-card border p-3 rounded-lg shadow-md hover:shadow-lg transition-shadow w-64 cursor-grab"
-                style={{
-                  left: `${server.position.x}px`,
-                  top: `${server.position.y}px`,
-                  zIndex: draggingNodeInfo?.id === server.id ? 10 : 1,
-                  userSelect: 'none', // Prevent text selection during drag
-                }}
-                onMouseDown={(e) => handleMouseDown(e, server.id)}
-              >
-                <div data-role="server-info-box">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="flex items-center gap-2 mb-2">
-                          <Move className="h-4 w-4 text-muted-foreground hover:text-primary flex-shrink-0" />
-                          <ServerIcon className="h-5 w-5 text-primary flex-shrink-0" />
-                          <h3 className="font-semibold text-sm truncate" title={`API: ${server.apiName} | 服务器 ID: ${server.id}`}>
-                            {server.apiName}
-                          </h3>
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-xs break-all text-xs">
-                        <p>来源 API: {server.apiName} (ID: {server.apiId})</p>
-                        <p>服务器实例 ID: {server.id}</p>
-                        <p>URL: {server.url}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                    <div className="text-xs space-y-0.5">
-                      <div className="flex items-center">
-                        <InstanceStatusBadge status={server.status} />
-                         <span className="text-muted-foreground ml-2 text-xs">(ID: {server.id.substring(0,8)}...)</span>
-                      </div>
-                       <p className="text-muted-foreground truncate">
-                        <span className="font-semibold">监听:</span> <span className="font-mono">{server.serverListeningAddress || 'N/A'}</span>
-                      </p>
-                       <p className="text-muted-foreground truncate">
-                        <span className="font-semibold">转发至:</span> <span className="font-mono">{server.serverForwardsToAddress || 'N/A'}</span>
-                      </p>
-                    </div>
-                </div>
-
-                {server.connectedClients.length > 0 && (
-                  <div className="mt-3 pt-2 border-t border-dashed space-y-2">
-                    {server.connectedClients.map(client => (
-                      <div 
-                        key={client.id} 
-                        ref={el => nodeRefs.current.set(`client-${client.id}`, el)}
-                        className="ml-1 p-1.5 rounded-md bg-muted/50 border border-transparent hover:border-primary/30"
-                      >
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div className="flex items-center gap-1.5">
-                              <SmartphoneIcon className="h-4 w-4 text-accent shrink-0" />
-                              <div className="text-xs flex-grow truncate">
-                                <span className="font-semibold">{client.apiName}</span>
-                                <span className="text-muted-foreground text-xs"> (ID: {client.id.substring(0,8)}...)</span>
-                              </div>
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" className="max-w-xs break-all text-xs">
-                            <p>来源 API: {client.apiName} (ID: {client.apiId})</p>
-                            <p>客户端实例 ID: {client.id}</p>
-                            <p>URL: {client.url}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                        <div className="text-xs space-y-0.5 mt-0.5 pl-1">
-                           <div className="flex items-center"><InstanceStatusBadge status={client.status} /></div>
-                           <p className="text-muted-foreground truncate" title={client.clientConnectsToServerAddress || 'N/A'}><span className="font-mono text-xs">{client.clientConnectsToServerAddress || 'N/A'}</span></p>
-                           <p className="text-muted-foreground flex items-center text-xs">
-                              <Route className="h-3 w-3 mr-1 text-green-600 dark:text-green-400 shrink-0"/>
-                              <span className="font-semibold font-mono text-green-600 dark:text-green-400 truncate" title={client.localTargetAddress || 'N/A'}>{client.localTargetAddress || 'N/A'}</span>
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
+            {serverNodes.map(renderNode)}
+            {clientNodes.filter(c => c.connectedToServerId).map(renderNode) /* Only render connected clients on main canvas */}
+            
           </div>
 
+          {unconnectedClients.length > 0 && !isLoadingData && (
+            <div className="mt-6">
+              <h2 className="text-xl font-semibold mb-3 flex items-center">
+                <Link2Off className="h-5 w-5 mr-2 text-destructive"/>
+                未连接的客户端实例
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {unconnectedClients.map(client => (
+                   <Card key={`unconn-${client.id}`} className="p-3 rounded-lg bg-accent/5 border-accent/20 shadow">
+                     <div className="flex items-center gap-2 mb-1.5">
+                        <SmartphoneIcon className="h-5 w-5 text-accent flex-shrink-0" />
+                        <h3 className="font-semibold text-sm truncate" title={client.apiName}>
+                          {client.apiName}
+                        </h3>
+                      </div>
+                      <div className="text-xs space-y-0.5 text-muted-foreground">
+                        <div className="flex items-center">
+                          <InstanceStatusBadge status={client.status} />
+                          <span className="ml-2 text-xs">(ID: {client.id.substring(0, 8)}...)</span>
+                        </div>
+                        <p className="truncate" title={client.clientConnectsToServerAddress || 'N/A'}>尝试连接: <span className="font-mono">{client.clientConnectsToServerAddress || 'N/A'}</span></p>
+                        <p className="truncate text-green-600 dark:text-green-400" title={client.localTargetAddress || 'N/A'}>
+                          <Link2 className="inline-block h-3 w-3 mr-1"/>
+                          本地目标: <span className="font-mono">{client.localTargetAddress || 'N/A'}</span>
+                        </p>
+                        <p className="text-xs italic mt-1">未能连接到任何已知的服务器实例。</p>
+                      </div>
+                   </Card>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="mt-8 p-4 bg-muted/30 rounded-lg text-xs text-muted-foreground shadow-sm">
-            <div className="flex items-center font-semibold mb-2"><Info className="h-4 w-4 mr-2 text-primary shrink-0" />拓扑说明</div>
+            <div className="flex items-center font-semibold mb-2"><Network className="h-4 w-4 mr-2 text-primary shrink-0" />拓扑说明</div>
             <ul className="list-disc list-inside space-y-1.5 pl-1">
-              <li>此视图聚合所有API源的服务器实例及其连接的客户端。仅显示有客户端连接的服务器。</li>
-              <li>您可以拖动服务器节点（包含其客户端）来调整布局。点击“布局”按钮可刷新连线。</li>
-              <li>连接基于客户端 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> 与服务器 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> 匹配 (端口及主机/通配符)。</li>
-              <li>客户端“落地Node”由其 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;target_addr&gt;</code> 解析。</li>
+              <li>此视图聚合所有API源的服务器和客户端实例。节点可拖动以调整布局。</li>
+              <li>连接基于客户端 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> 与服务器 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> (监听地址) 匹配 (端口及主机/通配符)。</li>
+              <li>客户端“落地”地址指其 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;target_addr&gt;</code>。</li>
               <li><span className="inline-flex items-center mr-1.5 align-middle"><svg width="12" height="12" viewBox="0 0 12 12"><line x1="0" y1="6" x2="12" y2="6" stroke="hsl(var(--primary))" strokeWidth="2"/></svg></span><strong className="text-primary">主色连线</strong>: 服务器和客户端属于同一API配置。</li>
               <li><span className="inline-flex items-center mr-1.5 align-middle"><svg width="12" height="12" viewBox="0 0 12 12"><line x1="0" y1="6" x2="12" y2="6" stroke="hsl(var(--accent))" strokeWidth="2"/></svg></span><strong className="text-accent">强调色连线</strong>: 服务器和客户端属于不同API配置。</li>
+              <li>未连接的客户端实例会单独列在图表下方。</li>
             </ul>
           </div>
         </div>
@@ -552,5 +562,3 @@ const TopologyPage: NextPage = () => {
 };
 
 export default TopologyPage;
-
-    
