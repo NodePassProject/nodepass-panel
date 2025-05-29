@@ -5,8 +5,17 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { Rss, ChevronRight, ChevronDown, Server, Smartphone, Link2 } from 'lucide-react';
-import type { Instance, InstanceEvent } from '@/types/nodepass'; // Ensure InstanceEvent is imported
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Rss, ChevronRight, ChevronDown, Server, Smartphone, Filter, XCircle } from 'lucide-react';
+import type { Instance, InstanceEvent } from '@/types/nodepass';
 import { getEventsUrl } from '@/lib/api';
 import { InstanceStatusBadge } from './InstanceStatusBadge';
 
@@ -17,6 +26,16 @@ interface EventLogProps {
   apiName: string | null;
 }
 
+const ALL_EVENT_TYPES: InstanceEvent['type'][] = ['initial', 'create', 'update', 'delete', 'log', 'shutdown', 'error'];
+const ALL_LOG_LEVELS = ['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'];
+
+function parseLogLevel(logMessage: string): string | undefined {
+  if (typeof logMessage !== 'string') return undefined;
+  const match = logMessage.match(/\b(DEBUG|INFO|WARN|ERROR|FATAL)\b/i);
+  return match ? match[1].toUpperCase() : undefined;
+}
+
+
 export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
   const [events, setEvents] = useState<InstanceEvent[]>([]);
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
@@ -26,25 +45,29 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
+  const [selectedEventTypes, setSelectedEventTypes] = useState<Set<InstanceEvent['type']>>(new Set());
+  const [selectedLogLevels, setSelectedLogLevels] = useState<Set<string>>(new Set());
+
   const processSseMessageData = useCallback((messageBlock: string) => {
-    let eventType = 'message'; // Default event type
+    let eventTypeFromServer = 'message'; // Default event type
     let eventDataLine = '';
 
     const lines = messageBlock.split('\n');
     for (const line of lines) {
       if (line.startsWith('event:')) {
-        eventType = line.substring('event:'.length).trim();
+        eventTypeFromServer = line.substring('event:'.length).trim();
       } else if (line.startsWith('data:')) {
         eventDataLine = line.substring('data:'.length).trim();
       }
     }
 
-    if (eventType === 'instance' && eventDataLine) {
+    if (eventTypeFromServer === 'instance' && eventDataLine) {
       try {
         const serverEventPayload = JSON.parse(eventDataLine);
         let frontendEventType: InstanceEvent['type'];
         let frontendEventData: any = serverEventPayload;
         let instanceDetailsPayload: Instance | undefined = serverEventPayload.instance;
+        let parsedLevel: string | undefined;
 
         switch (serverEventPayload.type) {
           case 'initial':
@@ -52,12 +75,14 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
           case 'update':
           case 'delete':
             frontendEventType = serverEventPayload.type;
-            // For these types, data field primarily stores instanceDetails if available
-            frontendEventData = instanceDetailsPayload || serverEventPayload.data || {}; 
+            frontendEventData = instanceDetailsPayload || serverEventPayload.data || {};
             break;
           case 'log':
             frontendEventType = 'log';
             frontendEventData = serverEventPayload.logs || `日志事件，但缺少 .logs 字段: ${JSON.stringify(serverEventPayload)}`;
+            if (typeof frontendEventData === 'string') {
+              parsedLevel = parseLogLevel(frontendEventData);
+            }
             break;
           case 'shutdown':
             frontendEventType = 'shutdown';
@@ -70,35 +95,38 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
             console.warn("未知服务器事件类型 (fetch):", serverEventPayload.type, serverEventPayload);
             frontendEventType = 'log'; // Treat as log
             frontendEventData = `未知事件 ${serverEventPayload.type}: ${JSON.stringify(serverEventPayload.data || serverEventPayload.instance || serverEventPayload)}`;
+            if (typeof frontendEventData === 'string') {
+              parsedLevel = parseLogLevel(frontendEventData);
+            }
             break;
         }
         
         const newEventToLog: InstanceEvent = {
           type: frontendEventType,
-          data: frontendEventData, // This could be an object for instance events, or string for logs
+          data: frontendEventData,
           instanceDetails: instanceDetailsPayload,
+          level: parsedLevel,
           timestamp: serverEventPayload.time || new Date().toISOString(),
         };
-        setEvents((prevEvents) => [newEventToLog, ...prevEvents.slice(0, 99)]);
+        setEvents((prevEvents) => [newEventToLog, ...prevEvents.slice(0, 199)]); // Store more events for filtering
       } catch (error) {
         console.error("无法解析事件数据 (fetch):", error, "原始数据:", eventDataLine);
         const errorEventToLog: InstanceEvent = { type: 'log', data: `解析事件错误 (fetch): ${eventDataLine}`, timestamp: new Date().toISOString() };
-        setEvents((prevEvents) => [errorEventToLog, ...prevEvents.slice(0, 99)]);
+        setEvents((prevEvents) => [errorEventToLog, ...prevEvents.slice(0, 199)]);
       }
     } else if (eventDataLine) {
-      // Generic SSE message not specifically typed as 'instance'
       const genericEvent: InstanceEvent = {
         type: 'log', 
         data: `通用消息 (fetch): ${eventDataLine}`,
         timestamp: new Date().toISOString()
       };
-      setEvents((prevEvents) => [genericEvent, ...prevEvents.slice(0, 99)]);
+      setEvents((prevEvents) => [genericEvent, ...prevEvents.slice(0, 199)]);
     }
   }, []);
 
   const connectWithFetch = useCallback(async () => {
     if (!apiId || !apiRoot || !apiToken || !apiName) {
-      setEvents([{ type: 'log', data: `API 配置无效，事件流 (fetch) 禁用。`, timestamp: new Date().toISOString() }]);
+      setEvents([{ type: 'log', data: `API 配置无效，事件流禁用。`, timestamp: new Date().toISOString() }]);
       setIsConnected(false);
       setIsConnecting(false);
       return;
@@ -111,13 +139,12 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
     const signal = abortControllerRef.current.signal;
 
     const eventsUrl = getEventsUrl(apiRoot);
-    // Clear previous error/status messages and show connecting message
     setEvents(prev => [{ type: 'log', data: `正在初始化事件流 (fetch) 到 ${eventsUrl} (携带 X-API-Key)...`, timestamp: new Date().toISOString() }, 
       ...prev.filter(e => {
         if (typeof e.data === 'string') {
           return !e.data.startsWith('正在初始化') && !e.data.includes('错误') && !e.data.includes('已连接') && !e.data.includes('已禁用');
         }
-        return true; // Keep non-string data (likely instance objects)
+        return true; 
       })
     ]);
     setIsConnecting(true);
@@ -155,7 +182,6 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       while (true) {
         const { value, done } = await reader.read();
         if (signal.aborted || done) {
-          const reason = signal.aborted ? '已中止' : '已关闭 (done)';
           setIsConnected(false);
           setIsConnecting(false);
           if (!signal.aborted) { 
@@ -190,13 +216,13 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
         if (error.message && error.message.toLowerCase().includes('failed to fetch')) {
           reasonMessage += ' 这通常是由于目标服务器的CORS策略阻止了请求, 或网络连接问题。请检查服务器CORS配置 (如 Access-Control-Allow-Origin) 和网络连通性。';
         }
-        uiErrorMessage = `${baseMessage} ${reasonMessage} 查看服务器日志了解详情。5秒后尝试重连...`;
+        uiErrorMessage = `${uiErrorMessage} ${reasonMessage} 查看服务器日志了解详情。5秒后尝试重连...`;
         console.error("EventLog: " + uiErrorMessage, error);
 
         if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = setTimeout(() => connectWithFetch(), 5000);
       }
-      setEvents(prev => [{ type: 'log', data: uiErrorMessage, timestamp: new Date().toISOString() }, ...prev.slice(0, 99)]);
+      setEvents(prev => [{ type: 'log', data: uiErrorMessage, timestamp: new Date().toISOString() }, ...prev.slice(0, 199)]);
     }
   }, [apiId, apiRoot, apiToken, apiName, processSseMessageData]);
 
@@ -204,7 +230,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
     if (apiId && apiRoot && apiToken) {
       connectWithFetch();
     } else {
-      setEvents(prev => [{ type: 'log', data: '事件流：等待有效的API配置...', timestamp: new Date().toISOString() }, ...prev.slice(0,99)]);
+      setEvents(prev => [{ type: 'log', data: '事件流：等待有效的API配置...', timestamp: new Date().toISOString() }, ...prev.slice(0,199)]);
       setIsConnected(false);
       setIsConnecting(false);
     }
@@ -212,7 +238,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
-        setEvents(prev => [{ type: 'log', data: `事件流 (fetch) 已断开。`, timestamp: new Date().toISOString() }, ...prev.slice(0,99)]);
+        setEvents(prev => [{ type: 'log', data: `事件流 (fetch) 已断开。`, timestamp: new Date().toISOString() }, ...prev.slice(0,199)]);
       }
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
@@ -250,6 +276,23 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
   else statusText = "未连接";
 
 
+  const filteredEvents = events.filter(event => {
+    if (selectedEventTypes.size > 0 && !selectedEventTypes.has(event.type)) {
+      return false;
+    }
+    if (selectedLogLevels.size > 0 && event.type === 'log') {
+      if (!event.level || !selectedLogLevels.has(event.level)) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const handleClearFilters = () => {
+    setSelectedEventTypes(new Set());
+    setSelectedLogLevels(new Set());
+  };
+
   return (
     <Card className="shadow-lg mt-6">
       <CardHeader>
@@ -258,16 +301,83 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
           实时事件日志
         </CardTitle>
         <CardDescription>
-          NodePass 实例实时更新 (API: {apiName || 'N/A'}，通过 Fetch API 连接)。
+          NodePass 实例实时更新 (API: {apiName || 'N/A'})。
           状态: <span className={`font-semibold ${isConnected ? 'text-green-500' : isConnecting ? 'text-yellow-500' : 'text-red-500'}`}>
             {statusText}
           </span>
         </CardDescription>
       </CardHeader>
       <CardContent>
+        <div className="flex items-center gap-2 mb-4">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Filter className="mr-2 h-4 w-4" />
+                事件类型 ({selectedEventTypes.size > 0 ? selectedEventTypes.size : '全部'})
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56">
+              <DropdownMenuLabel>筛选事件类型</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {ALL_EVENT_TYPES.map((type) => (
+                <DropdownMenuCheckboxItem
+                  key={type}
+                  checked={selectedEventTypes.has(type)}
+                  onCheckedChange={(checked) => {
+                    setSelectedEventTypes((prev) => {
+                      const next = new Set(prev);
+                      if (checked) next.add(type);
+                      else next.delete(type);
+                      return next;
+                    });
+                  }}
+                >
+                  {getBadgeTextAndVariant(type).text}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Filter className="mr-2 h-4 w-4" />
+                日志级别 ({selectedLogLevels.size > 0 ? selectedLogLevels.size : '全部'})
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56">
+              <DropdownMenuLabel>筛选日志级别</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {ALL_LOG_LEVELS.map((level) => (
+                <DropdownMenuCheckboxItem
+                  key={level}
+                  checked={selectedLogLevels.has(level)}
+                  onCheckedChange={(checked) => {
+                    setSelectedLogLevels((prev) => {
+                      const next = new Set(prev);
+                      if (checked) next.add(level);
+                      else next.delete(level);
+                      return next;
+                    });
+                  }}
+                >
+                  {level}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {(selectedEventTypes.size > 0 || selectedLogLevels.size > 0) && (
+            <Button variant="ghost" size="sm" onClick={handleClearFilters}>
+              <XCircle className="mr-2 h-4 w-4" />
+              清除筛选
+            </Button>
+          )}
+        </div>
+
         <ScrollArea className="h-80 w-full rounded-md border p-3 bg-muted/20 text-xs" ref={scrollAreaRef}>
-          {events.length === 0 && <p className="text-sm text-muted-foreground">无事件。</p>}
-          {events.map((event, index) => {
+          {filteredEvents.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">无匹配事件。</p>}
+          {filteredEvents.map((event, index) => {
             const isExpanded = expandedIndex === index;
             const { text: badgeText, variant: badgeVariant } = getBadgeTextAndVariant(event.type);
             const instance = event.instanceDetails;
@@ -295,6 +405,14 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
                   <Badge variant={badgeVariant} className="py-0.5 px-1.5 shadow-sm whitespace-nowrap shrink-0">
                     {badgeText}
                   </Badge>
+                  {event.type === 'log' && event.level && (
+                    <Badge variant={
+                      event.level === 'ERROR' || event.level === 'FATAL' ? 'destructive' : 
+                      event.level === 'WARN' ? 'secondary' : 'outline' // Adjust WARN color if needed
+                    } className="py-0.5 px-1.5 shadow-sm whitespace-nowrap shrink-0">
+                      {event.level}
+                    </Badge>
+                  )}
                   <div className="flex-grow min-w-0"> 
                     {event.type !== 'log' && instance ? (
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 leading-tight">
@@ -322,7 +440,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
                 {isExpanded && canExpand && (
                   <div className="mt-2 ml-8 pl-4 border-l-2 border-muted/50 py-2 bg-background/30 rounded-r-md">
                     {instance ? (
-                      <pre className="text-xs p-2 rounded-md overflow-x-auto bg-muted/40">
+                      <pre className="text-xs p-2 rounded-md overflow-x-auto bg-muted/40 whitespace-pre-wrap break-all">
                         {JSON.stringify(instance, null, 2)}
                       </pre>
                     ) : event.type === 'log' && typeof event.data === 'string' ? (
@@ -330,7 +448,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
                         {event.data}
                       </p>
                     ) : typeof event.data === 'object' && event.data !== null && Object.keys(event.data).length > 0 ? (
-                       <pre className="text-xs p-2 rounded-md overflow-x-auto bg-muted/40">
+                       <pre className="text-xs p-2 rounded-md overflow-x-auto bg-muted/40 whitespace-pre-wrap break-all">
                         {JSON.stringify(event.data, null, 2)}
                       </pre>
                     ) : (

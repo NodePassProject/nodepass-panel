@@ -24,10 +24,9 @@ export interface ModifyInstanceConfigRequest {
 
 // Add instanceDetails to InstanceEvent for structured data
 export interface InstanceEvent {
-  type: 'instance_created' | 'instance_updated' | 'instance_deleted' | 'log';
+  type: 'initial' | 'create' | 'update' | 'delete' | 'log' | 'shutdown' | 'error'; // Added 'error' and 'shutdown' based on docs
   data: any; // Could be more specific based on event type, e.g. string for logs, Partial<Instance> for others
-  instanceDetails?: Instance; // Store the full instance object for created/updated/deleted events
+  instanceDetails?: Instance; // Store the full instance object for relevant events
+  level?: string; // For parsed log level from log messages
   timestamp: string;
 }
-
-    
