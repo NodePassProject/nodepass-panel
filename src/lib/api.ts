@@ -52,27 +52,45 @@ async function request<T>(
   return response.json();
 }
 
-export const nodePassApi = {
-  getInstances: (apiRootUrl: string, token: string) =>
-    request<Instance[]>(`${apiRootUrl}/v1/instances`, {}, token),
-  
-  createInstance: (data: CreateInstanceRequest, apiRootUrl: string, token: string) =>
-    request<Instance>(`${apiRootUrl}/v1/instances`, { method: 'POST', body: JSON.stringify(data) }, token),
-  
-  getInstance: (id: string, apiRootUrl: string, token: string) =>
-    request<Instance>(`${apiRootUrl}/v1/instances/${id}`, {}, token),
-  
-  updateInstance: (id: string, data: UpdateInstanceRequest, apiRootUrl: string, token: string) =>
-    request<Instance>(`${apiRootUrl}/v1/instances/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, token),
-
-  modifyInstanceConfig: (id: string, data: ModifyInstanceConfigRequest, apiRootUrl: string, token: string) =>
-    request<Instance>(`${apiRootUrl}/v1/instances/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, token),
-  
-  deleteInstance: (id: string, apiRootUrl: string, token: string) =>
-    request<void>(`${apiRootUrl}/v1/instances/${id}`, { method: 'DELETE' }, token),
+const checkApiRootUrl = (apiRootUrl: string | null | undefined, operation: string): void => {
+  if (!apiRootUrl || typeof apiRootUrl !== 'string' || apiRootUrl.trim() === '') {
+    throw new Error(`无法 ${operation}: API 根地址 (apiRootUrl) 未配置或无效。`);
+  }
 };
 
-export const getEventsUrl = (apiRootUrl: string): string => {
-  if (!apiRootUrl) throw new Error("apiRootUrl is required to get events URL");
+export const nodePassApi = {
+  getInstances: (apiRootUrl: string, token: string) => {
+    checkApiRootUrl(apiRootUrl, '获取实例列表');
+    return request<Instance[]>(`${apiRootUrl}/v1/instances`, {}, token);
+  },
+  
+  createInstance: (data: CreateInstanceRequest, apiRootUrl: string, token: string) => {
+    checkApiRootUrl(apiRootUrl, '创建实例');
+    return request<Instance>(`${apiRootUrl}/v1/instances`, { method: 'POST', body: JSON.stringify(data) }, token);
+  },
+  
+  getInstance: (id: string, apiRootUrl: string, token: string) => {
+    checkApiRootUrl(apiRootUrl, `获取实例 ${id}`);
+    return request<Instance>(`${apiRootUrl}/v1/instances/${id}`, {}, token);
+  },
+  
+  updateInstance: (id: string, data: UpdateInstanceRequest, apiRootUrl: string, token: string) => {
+    checkApiRootUrl(apiRootUrl, `更新实例 ${id}`);
+    return request<Instance>(`${apiRootUrl}/v1/instances/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, token);
+  },
+
+  modifyInstanceConfig: (id: string, data: ModifyInstanceConfigRequest, apiRootUrl: string, token: string) => {
+    checkApiRootUrl(apiRootUrl, `修改实例配置 ${id}`);
+    return request<Instance>(`${apiRootUrl}/v1/instances/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, token);
+  },
+  
+  deleteInstance: (id: string, apiRootUrl: string, token: string) => {
+    checkApiRootUrl(apiRootUrl, `删除实例 ${id}`);
+    return request<void>(`${apiRootUrl}/v1/instances/${id}`, { method: 'DELETE' }, token);
+  },
+};
+
+export const getEventsUrl = (apiRootUrl: string | null): string => {
+  if (!apiRootUrl) throw new Error("API 根地址 (apiRootUrl) 未配置，无法获取事件 URL。");
   return `${apiRootUrl}/v1/events`; 
 };
