@@ -12,10 +12,24 @@ async function request<T>(
     headers.append('X-API-Key', token);
   }
 
-  const response = await fetch(fullRequestUrl, {
-    ...options,
-    headers,
-  });
+  let response;
+  try {
+    response = await fetch(fullRequestUrl, {
+      ...options,
+      headers,
+    });
+  } catch (networkError: any) {
+    // Handle network errors (like "Failed to fetch")
+    console.error(`Network error while requesting ${fullRequestUrl}:`, networkError);
+    let errorMessage = `网络请求失败: ${networkError.message}. 请检查网络连接和目标服务器 (${fullRequestUrl}) 的 CORS 配置。`;
+    // Provide a more specific hint if it's a typical "Failed to fetch" error often caused by CORS
+    if (networkError.message?.toLowerCase().includes('failed to fetch')) {
+        errorMessage += ' 这通常是由于目标服务器的CORS策略阻止了请求 (缺少 Access-Control-Allow-Origin 头部), 或网络连接问题。';
+    }
+    const error = new Error(errorMessage);
+    (error as any).cause = networkError; // Preserve the original error if needed
+    throw error;
+  }
 
   if (!response.ok) {
     let errorBody;
@@ -48,7 +62,6 @@ export const nodePassApi = {
   getInstance: (id: string, apiRootUrl: string, token: string) =>
     request<Instance>(`${apiRootUrl}/v1/instances/${id}`, {}, token),
   
-  // Updated to use PATCH as per documentation
   updateInstance: (id: string, data: UpdateInstanceRequest, apiRootUrl: string, token: string) =>
     request<Instance>(`${apiRootUrl}/v1/instances/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, token),
 
@@ -59,11 +72,7 @@ export const nodePassApi = {
     request<void>(`${apiRootUrl}/v1/instances/${id}`, { method: 'DELETE' }, token),
 };
 
-// This function provides the URL for the event stream.
-// For direct EventSource connection, it returns the raw API endpoint.
-// For proxy connection, the proxy itself will use this to know where to connect.
 export const getEventsUrl = (apiRootUrl: string): string => {
   if (!apiRootUrl) throw new Error("apiRootUrl is required to get events URL");
-  // Ensure it uses /v1/events as per documentation
   return `${apiRootUrl}/v1/events`; 
 };
