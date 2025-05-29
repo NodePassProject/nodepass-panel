@@ -56,11 +56,10 @@ const chartConfig = {
 
 
 const TrafficPage: NextPage = () => {
-  const { apiConfigsList, isLoading: isLoadingApiConfig, getApiRootUrl, getToken, getApiConfigById } = useApiConfig();
+  const { apiConfigsList, isLoading: isLoadingApiConfig, getApiRootUrl, getToken } = useApiConfig();
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
-
-  const { data: allInstancesData, isLoading: isLoadingData, error: fetchError, refetch } = useQuery<
+  const { data: allInstancesData, isLoading: isLoadingData, error: fetchErrorGlobal, refetch } = useQuery<
     InstanceWithApiDetails[],
     Error,
     InstanceWithApiDetails[]
@@ -71,23 +70,31 @@ const TrafficPage: NextPage = () => {
         return [];
       }
       let combinedInstances: InstanceWithApiDetails[] = [];
-      // Using Promise.allSettled to handle individual API fetch errors
+      
       const results = await Promise.allSettled(
         apiConfigsList.map(async (config) => {
           const apiRootVal = getApiRootUrl(config.id);
           const tokenVal = getToken(config.id);
+          
           if (!apiRootVal || !tokenVal) {
-            // This case should ideally be caught by `checkApiRootUrl` in `nodePassApi`
-            // but it's good to have a fallback log here.
-            console.warn(`TrafficPage: API config "${config.name}" (ID: ${config.id}) is invalid for fetching.`);
-            return []; // Return empty for this config if invalid
+            console.warn(`TrafficPage: API config "${config.name}" (ID: ${config.id}) is invalid. Skipping.`);
+            // Return an empty array for this promise if config is bad, so Promise.allSettled still works.
+            // Or, you could choose to reject it to mark it as a failure for this specific API.
+            // For simplicity in combining results, an empty array is fine if it's a config issue.
+            return []; 
           }
+          
           try {
             const data = await nodePassApi.getInstances(apiRootVal, tokenVal);
             return data.map(inst => ({ ...inst, apiId: config.id, apiName: config.name }));
-          } catch (err: any) {
-             console.error(`TrafficPage: Failed to load instances from "${config.name}" (ID: ${config.id}):`, err.message || err);
-             throw err; // Re-throw to be caught by useQuery's error state for the whole query if desired, or handle per API
+          } catch (error) {
+            // Log the specific error for this API config
+            console.error(`TrafficPage: Failed to load instances from API "${config.name}" (ID: ${config.id}). Error:`, error instanceof Error ? error.message : String(error));
+            // Important: Do NOT re-throw here if you want the page to show partial data.
+            // Instead, let this promise be 'rejected' in Promise.allSettled.
+            // We will filter out rejected promises or handle them later.
+            // To make Promise.allSettled reflect this as a specific failure, we can make this inner promise reject.
+            return Promise.reject(new Error(`Failed to fetch from ${config.name}: ${error instanceof Error ? error.message : String(error)}`));
           }
         })
       );
@@ -96,7 +103,9 @@ const TrafficPage: NextPage = () => {
         if (result.status === 'fulfilled' && result.value) {
           combinedInstances.push(...result.value);
         } else if (result.status === 'rejected') {
-          // Error already logged, useQuery will also reflect an error state
+          // The specific error was already logged in the catch block above.
+          // We are choosing to not let one API failure stop the entire page load.
+          // console.warn(`TrafficPage: One or more API fetches failed. Reason:`, result.reason);
         }
       });
       return combinedInstances;
@@ -144,12 +153,14 @@ const TrafficPage: NextPage = () => {
     );
   }
 
-  if (fetchError && !isLoadingData) { // Show global error if the whole query fails
+  // Note: fetchErrorGlobal from useQuery might not be set if we handle rejections within queryFn without re-throwing.
+  // However, if a critical error occurs before Promise.allSettled (e.g., apiConfigsList is bad), it might be set.
+  if (fetchErrorGlobal && !isLoadingData) { 
     return (
       <AppLayout>
         <Card className="max-w-md mx-auto mt-10 shadow-lg">
           <CardHeader><CardTitle className="text-destructive flex items-center justify-center"><AlertTriangle className="h-6 w-6 mr-2" />错误</CardTitle></CardHeader>
-          <CardContent><p>加载数据失败: {fetchError.message}</p></CardContent>
+          <CardContent><p>加载数据失败: {fetchErrorGlobal.message}</p></CardContent>
         </Card>
       </AppLayout>
     );
@@ -176,7 +187,7 @@ const TrafficPage: NextPage = () => {
         </div>
       )}
 
-      {!isLoadingData && allInstances.length === 0 && !fetchError && (
+      {!isLoadingData && allInstances.length === 0 && !fetchErrorGlobal && (
         <Card className="text-center py-10 shadow-lg">
           <CardHeader><CardTitle>无数据显示</CardTitle></CardHeader>
           <CardContent><p className="text-muted-foreground">{apiConfigsList.length > 0 ? "未找到任何实例或所有实例流量为0。" : "请先配置API连接。"}</p></CardContent>
@@ -267,3 +278,5 @@ const TrafficPage: NextPage = () => {
 };
 
 export default TrafficPage;
+
+    

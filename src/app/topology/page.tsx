@@ -49,7 +49,6 @@ interface NodeBase {
 interface ServerNode extends NodeBase {
   type: 'server';
   serverListeningAddress: string | null;
-  // serverForwardsToAddress: string | null; // Removed as per user request
 }
 
 interface ClientNode extends NodeBase {
@@ -119,7 +118,7 @@ function splitHostPort(address: string | null): { host: string | null; port: str
     return { host: ipv6WithPortMatch[1], port: ipv6WithPortMatch[2] };
   }
   const lastColonIndex = address.lastIndexOf(':');
-  if (lastColonIndex === -1 || address.substring(0, lastColonIndex).includes(':')) { // Check if it's an IPv6 without port
+  if (lastColonIndex === -1 || address.substring(0, lastColonIndex).includes(':')) { 
     return { host: address, port: null };
   }
   const potentialHost = address.substring(0, lastColonIndex);
@@ -128,20 +127,20 @@ function splitHostPort(address: string | null): { host: string | null; port: str
   if (potentialPort && !isNaN(parseInt(potentialPort, 10)) && parseInt(potentialPort, 10).toString() === potentialPort) {
     return { host: potentialHost, port: potentialPort };
   }
-  return { host: address, port: null }; // No valid port found
+  return { host: address, port: null }; 
 }
 
 
-const NODE_WIDTH = 250; // Reduced from 280
-const NODE_HEIGHT_SERVER = 100; // Reduced from 120
-const NODE_HEIGHT_CLIENT = 85; // Reduced from 100
-const GRAPH_CLIENT_OFFSET_X = NODE_WIDTH + 50; // Reduced from +70
-const GRAPH_CLIENT_SPACING_Y = 20; // Reduced from 30
+const NODE_WIDTH = 250; 
+const NODE_HEIGHT_SERVER = 100;
+const NODE_HEIGHT_CLIENT = 85; 
+const GRAPH_CLIENT_OFFSET_X = NODE_WIDTH + 50; 
+const GRAPH_CLIENT_SPACING_Y = 20;
 
 
 const TopologyPage: NextPage = () => {
   const router = useRouter();
-  const { apiConfigsList, isLoading: isLoadingApiConfigGlobal, getApiConfigById } = useApiConfig();
+  const { apiConfigsList, isLoading: isLoadingApiConfigGlobal, getApiConfigById, getApiRootUrl, getToken } = useApiConfig();
 
   const [allServerInstances, setAllServerInstances] = useState<ServerNode[]>([]);
   const [allClientInstances, setAllClientInstances] = useState<ClientNode[]>([]);
@@ -222,7 +221,7 @@ const TopologyPage: NextPage = () => {
     setAllClientInstances(cNodes);
   }, []);
 
-  const { data: allFetchedInstancesData, isLoading: isLoadingData, error: fetchError, refetch } = useQuery<
+  const { data: allFetchedInstancesData, isLoading: isLoadingData, error: fetchErrorGlobal, refetch } = useQuery<
     InstanceWithApiDetails[],
     Error,
     InstanceWithApiDetails[]
@@ -236,12 +235,19 @@ const TopologyPage: NextPage = () => {
 
       const results = await Promise.allSettled(
         apiConfigsList.map(async (config) => {
-          const currentConfig = getApiConfigById(config.id); // Use specific getter
-          if (!currentConfig?.apiUrl || !currentConfig?.token) {
-            throw new Error(`API配置 "${config.name}" (ID: ${config.id}) 无效。`);
+          const apiRootVal = getApiRootUrl(config.id);
+          const tokenVal = getToken(config.id);
+          if (!apiRootVal || !tokenVal) {
+            console.warn(`TopologyPage: API config "${config.name}" (ID: ${config.id}) is invalid. Skipping.`);
+            return [];
           }
-          const data = await nodePassApi.getInstances(currentConfig.apiUrl, currentConfig.token, currentConfig.prefixPath);
-          return data.map(inst => ({ ...inst, apiId: config.id, apiName: config.name }));
+          try {
+            const data = await nodePassApi.getInstances(apiRootVal, tokenVal);
+            return data.map(inst => ({ ...inst, apiId: config.id, apiName: config.name }));
+          } catch (error) {
+            console.error(`TopologyPage: Failed to load instances from API "${config.name}" (ID: ${config.id}). Error:`, error instanceof Error ? error.message : String(error));
+            return Promise.reject(new Error(`Failed to fetch from ${config.name}: ${error instanceof Error ? error.message : String(error)}`));
+          }
         })
       );
 
@@ -249,7 +255,7 @@ const TopologyPage: NextPage = () => {
         if (result.status === 'fulfilled' && result.value) {
           combinedInstances.push(...result.value);
         } else if (result.status === 'rejected') {
-          console.error(`拓扑: 加载实例失败:`, result.reason);
+          // Error for this specific API config has already been logged
         }
       });
       return combinedInstances;
@@ -449,7 +455,7 @@ const TopologyPage: NextPage = () => {
         key={`${node.type}-${node.id}`}
         ref={el => nodeRefs.current.set(`${node.type}-${node.id}`, el)}
         className={cn(
-          "absolute shadow-lg hover:shadow-xl transition-all p-2 rounded-md flex flex-col border-2", // Reduced padding from p-2.5 to p-2
+          "absolute shadow-lg hover:shadow-xl transition-all p-2 rounded-md flex flex-col border-2",
           bgColor,
         )}
         style={{
@@ -509,12 +515,12 @@ const TopologyPage: NextPage = () => {
     return <AppLayout><div className="text-center py-10 flex flex-col items-center justify-center h-[calc(100vh-10rem-4rem)]"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="mt-3">加载API配置...</p></div></AppLayout>;
   }
 
-  if (fetchError) {
+  if (fetchErrorGlobal && !isLoadingData) {
      return (
       <AppLayout>
         <Card className="max-w-md mx-auto mt-10 shadow-lg">
           <CardHeader><CardTitle className="text-destructive flex items-center justify-center"><AlertTriangle className="h-6 w-6 mr-2" />错误</CardTitle></CardHeader>
-          <CardContent><p>加载拓扑数据失败: {fetchError.message}</p><Button onClick={() => router.push('/connections')} className="mt-6">管理API连接</Button></CardContent>
+          <CardContent><p>加载拓扑数据失败: {fetchErrorGlobal.message}</p><Button onClick={() => router.push('/connections')} className="mt-6">管理API连接</Button></CardContent>
         </Card>
       </AppLayout>
     );
@@ -570,7 +576,6 @@ const TopologyPage: NextPage = () => {
                     <TableHead>状态</TableHead>
                     <TableHead>URL</TableHead>
                     <TableHead>监听地址</TableHead>
-                    {/* <TableHead>转发至</TableHead> -- Removed as per user request */}
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -591,7 +596,6 @@ const TopologyPage: NextPage = () => {
                       <TableCell><InstanceStatusBadge status={server.status} /></TableCell>
                       <TableCell className="font-mono text-xs truncate max-w-xs" title={server.url}>{server.url}</TableCell>
                       <TableCell className="font-mono text-xs">{server.serverListeningAddress || 'N/A'}</TableCell>
-                      {/* <TableCell className="font-mono text-xs">{server.serverForwardsToAddress || 'N/A'}</TableCell> */}
                       <TableCell className="text-right">
                         <Button variant="default" size="sm" onClick={() => handleViewServerTopology(server)}>
                           <Eye className="mr-2 h-4 w-4" /> 查看拓扑
@@ -620,7 +624,6 @@ const TopologyPage: NextPage = () => {
                     strokeWidth="1.5"
                     fill="none"
                     className="opacity-75"
-                    // markerEnd={line.type === 'intra-api' ? "url(#arrowhead-primary)" : "url(#arrowhead-accent)"}
                   />
                 ))}
               </svg>
@@ -666,3 +669,5 @@ const TopologyPage: NextPage = () => {
 };
 
 export default TopologyPage;
+
+    
