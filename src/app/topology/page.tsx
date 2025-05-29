@@ -23,7 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { InstanceDetailsModal } from '@/components/nodepass/InstanceDetailsModal';
-
+import { useQuery } from '@tanstack/react-query';
 
 interface InstanceWithApiDetails extends Instance {
   apiId: string;
@@ -132,7 +132,7 @@ function splitHostPort(address: string | null): { host: string | null; port: str
 }
 
 
-const NODE_WIDTH = 280; // Increased width for better content display
+const NODE_WIDTH = 280;
 const NODE_HEIGHT_SERVER = 120;
 const NODE_HEIGHT_CLIENT = 100;
 const GRAPH_CLIENT_OFFSET_X = NODE_WIDTH + 70;
@@ -141,7 +141,7 @@ const GRAPH_CLIENT_SPACING_Y = 30;
 
 const TopologyPage: NextPage = () => {
   const router = useRouter();
-  const { apiConfigsList, isLoading: isLoadingApiConfig, getApiConfigById, getApiRootUrl, getToken } = useApiConfig();
+  const { apiConfigsList, isLoading: isLoadingApiConfigGlobal, getApiConfigById, getApiRootUrl, getToken } = useApiConfig();
 
   const [allServerInstances, setAllServerInstances] = useState<ServerNode[]>([]);
   const [allClientInstances, setAllClientInstances] = useState<ClientNode[]>([]);
@@ -150,8 +150,6 @@ const TopologyPage: NextPage = () => {
   const [selectedServerForGraph, setSelectedServerForGraph] = useState<ServerNode | null>(null);
   const [clientsForSelectedServer, setClientsForSelectedServer] = useState<ClientNode[]>([]);
 
-  const [isLoadingData, setIsLoadingData] = useState(true);
-  const [fetchErrors, setFetchErrors] = useState<Map<string, string>>(new Map());
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [lines, setLines] = useState<ConnectionLine[]>([]);
 
@@ -163,7 +161,6 @@ const TopologyPage: NextPage = () => {
 
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [selectedInstanceForDetails, setSelectedInstanceForDetails] = useState<Instance | null>(null);
-
 
   const processAllInstanceData = useCallback((fetchedInstances: InstanceWithApiDetails[]) => {
     const sNodes: ServerNode[] = [];
@@ -178,7 +175,7 @@ const TopologyPage: NextPage = () => {
           status: inst.status,
           apiId: inst.apiId,
           apiName: inst.apiName,
-          position: { x: 50, y: 50 }, // Initial position, will be updated in layout
+          position: { x: 50, y: 50 }, 
           serverListeningAddress: parseTunnelAddr(inst.url),
           serverForwardsToAddress: parseTargetAddr(inst.url),
           originalInstance: inst,
@@ -191,7 +188,7 @@ const TopologyPage: NextPage = () => {
           status: inst.status,
           apiId: inst.apiId,
           apiName: inst.apiName,
-          position: { x: 50 + GRAPH_CLIENT_OFFSET_X, y: 50 }, // Initial position
+          position: { x: 50 + GRAPH_CLIENT_OFFSET_X, y: 50 }, 
           clientConnectsToServerAddress: parseTunnelAddr(inst.url),
           localTargetAddress: parseTargetAddr(inst.url),
           connectedToServerId: null,
@@ -222,62 +219,61 @@ const TopologyPage: NextPage = () => {
 
     setAllServerInstances(sNodes);
     setAllClientInstances(cNodes);
-    setLastRefreshed(new Date());
   }, []);
+  
+  const { data: allFetchedInstancesData, isLoading: isLoadingData, error: fetchError, refetch } = useQuery<
+    InstanceWithApiDetails[],
+    Error,
+    InstanceWithApiDetails[] 
+  >({
+    queryKey: ['allInstancesForTopology', apiConfigsList.map(c => c.id).join(',')],
+    queryFn: async () => {
+      if (apiConfigsList.length === 0) {
+        return [];
+      }
+      let combinedInstances: InstanceWithApiDetails[] = [];
+      // Using Promise.allSettled to fetch from all APIs even if some fail
+      const results = await Promise.allSettled(
+        apiConfigsList.map(async (config) => {
+          const apiRootVal = getApiRootUrl(config.id);
+          const tokenVal = getToken(config.id);
+          if (!apiRootVal || !tokenVal) {
+            throw new Error(`API配置 "${config.name}" (ID: ${config.id}) 无效。`);
+          }
+          const data = await nodePassApi.getInstances(apiRootVal, tokenVal);
+          return data.map(inst => ({ ...inst, apiId: config.id, apiName: config.name }));
+        })
+      );
 
-  const fetchDataAndProcess = useCallback(async () => {
-    if (isLoadingApiConfig) {
-        setIsLoadingData(false);
-        if (apiConfigsList.length === 0) {
-            setFetchErrors(new Map().set("global", "无API配置。请先添加。"));
+      results.forEach(result => {
+        if (result.status === 'fulfilled' && result.value) {
+          combinedInstances.push(...result.value);
+        } else if (result.status === 'rejected') {
+          // Errors are handled by React Query's 'error' state, but you can log them here too
+          console.error(`拓扑: 加载实例失败:`, result.reason);
         }
-        setAllServerInstances([]); setAllClientInstances([]); setLines([]);
-        return;
-    }
-    if (apiConfigsList.length === 0) {
-        setIsLoadingData(false);
-        setFetchErrors(new Map().set("global", "无API配置。请先添加。"));
-        setAllServerInstances([]); setAllClientInstances([]); setLines([]);
-        return;
-    }
+      });
+      return combinedInstances;
+    },
+    enabled: !isLoadingApiConfigGlobal && apiConfigsList.length > 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true, 
+    onSuccess: (data) => {
+      processAllInstanceData(data);
+      setLastRefreshed(new Date());
+    },
+  });
 
-
-    setIsLoadingData(true);
-    setFetchErrors(new Map());
-    let combinedInstances: InstanceWithApiDetails[] = [];
-    const currentErrors = new Map<string, string>();
-
-    for (const config of apiConfigsList) {
-      const apiRootVal = getApiRootUrl(config.id);
-      const tokenVal = getToken(config.id);
-
-      if (!apiRootVal || !tokenVal) {
-        currentErrors.set(config.id, `API配置 "${config.name}" 无效。`);
-        continue;
-      }
-
-      try {
-        // console.log(`拓扑: 从API ${config.name} (ID: ${config.id}) 加载实例，URL: ${apiRootVal}`);
-        const data = await nodePassApi.getInstances(apiRootVal, tokenVal);
-        combinedInstances.push(...data.map(inst => ({ ...inst, apiId: config.id, apiName: config.name })));
-      } catch (err: any) {
-        console.error(`拓扑: 从 "${config.name}" 加载实例失败:`, err);
-        currentErrors.set(config.id, `加载 "${config.name}" 实例失败: ${err.message || '未知错误'}`);
-      }
-    }
-    setFetchErrors(currentErrors);
-    if (combinedInstances.length > 0) {
-      processAllInstanceData(combinedInstances);
-    } else {
-      setAllServerInstances([]);
-      setAllClientInstances([]);
-    }
-    setIsLoadingData(false);
-  }, [apiConfigsList, isLoadingApiConfig, getApiRootUrl, getToken, processAllInstanceData]);
-
+  const handleRefresh = () => {
+    refetch();
+  };
+  
   useEffect(() => {
-    fetchDataAndProcess();
-  }, [fetchDataAndProcess]);
+    if (allFetchedInstancesData) {
+      processAllInstanceData(allFetchedInstancesData);
+    }
+  }, [allFetchedInstancesData, processAllInstanceData]);
+
 
   const calculateGraphLayoutAndLines = useCallback(() => {
     if (viewMode !== 'graph' || !selectedServerForGraph || !svgRef.current || !canvasRef.current) {
@@ -294,18 +290,21 @@ const TopologyPage: NextPage = () => {
       setLines([]);
       return;
     }
+    
+    const serverRect = serverEl.getBoundingClientRect();
+    const canvasRect = canvasRef.current.getBoundingClientRect();
 
-    const serverX_out = serverNode.position.x + NODE_WIDTH; // Right middle of server
+    const serverX_out = serverNode.position.x + NODE_WIDTH; 
     const serverY_out = serverNode.position.y + NODE_HEIGHT_SERVER / 2;
 
     connectedClients.forEach(client => {
       const clientEl = nodeRefs.current.get(`client-${client.id}`);
       if (!clientEl) return;
 
-      const clientX_in = client.position.x; // Left middle of client
+      const clientRect = clientEl.getBoundingClientRect();
+      const clientX_in = client.position.x; 
       const clientY_in = client.position.y + NODE_HEIGHT_CLIENT / 2;
-
-      // Control points for a smoother curve from server's right to client's left
+      
       const controlPointX1 = serverX_out + Math.abs(clientX_in - serverX_out) * 0.5;
       const controlPointY1 = serverY_out;
       const controlPointX2 = clientX_in - Math.abs(clientX_in - serverX_out) * 0.5;
@@ -506,21 +505,32 @@ const TopologyPage: NextPage = () => {
   };
 
 
-  if (isLoadingApiConfig) {
+  if (isLoadingApiConfigGlobal) {
     return <AppLayout><div className="text-center py-10"><Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" /><p>加载API配置...</p></div></AppLayout>;
   }
-
-  const globalError = fetchErrors.get("global");
-  if (globalError && !isLoadingData) {
-    return (
+  
+  if (fetchError) {
+     return (
       <AppLayout>
         <Card className="max-w-md mx-auto mt-10 shadow-lg">
           <CardHeader><CardTitle className="text-destructive flex items-center justify-center"><AlertTriangle className="h-6 w-6 mr-2" />错误</CardTitle></CardHeader>
-          <CardContent><p>{globalError}</p><Button onClick={() => router.push('/connections')} className="mt-6">管理API连接</Button></CardContent>
+          <CardContent><p>加载拓扑数据失败: {fetchError.message}</p><Button onClick={() => router.push('/connections')} className="mt-6">管理API连接</Button></CardContent>
         </Card>
       </AppLayout>
     );
   }
+  
+  if (isLoadingData && !isLoadingApiConfigGlobal) {
+    return (
+      <AppLayout>
+        <div className="flex-grow flex justify-center items-center py-10 h-[calc(100vh-10rem)]">
+          <Loader2 className="h-16 w-16 animate-spin text-primary" />
+          <p className="ml-4 text-xl">加载拓扑数据...</p>
+        </div>
+      </AppLayout>
+    );
+  }
+
 
   return (
     <AppLayout>
@@ -536,33 +546,14 @@ const TopologyPage: NextPage = () => {
                 </Button>
               )}
               {lastRefreshed && <span className="text-xs text-muted-foreground">刷新: {lastRefreshed.toLocaleTimeString()}</span>}
-              <Button variant="outline" onClick={fetchDataAndProcess} disabled={isLoadingData} size="sm">
+              <Button variant="outline" onClick={handleRefresh} disabled={isLoadingData} size="sm">
                 <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingData ? 'animate-spin' : ''}`} />
                 {isLoadingData ? '刷新中...' : '刷新'}
               </Button>
             </div>
           </div>
 
-          {fetchErrors.size > 0 && !globalError && (
-            <div className="mb-4 space-y-2">
-              {Array.from(fetchErrors.entries()).map(([apiId, errorMsg]) => (
-                apiId !== "global" && (
-                  <Card key={apiId} className="bg-destructive/10 border-destructive/30 shadow-md">
-                    <CardContent className="p-3 text-sm text-destructive flex items-start">
-                      <AlertTriangle className="h-5 w-5 mr-2.5 shrink-0 mt-0.5" />
-                      <div><p className="font-semibold">加载错误 (API: {getApiConfigById(apiId)?.name || apiId})</p><p>{errorMsg}</p></div>
-                    </CardContent>
-                  </Card>
-                )
-              ))}
-            </div>
-          )}
-
-          {isLoadingData && !isLoadingApiConfig && (
-            <div className="flex-grow flex justify-center items-center py-10">
-              <Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-4 text-lg">加载拓扑数据...</p>
-            </div>
-          )}
+          {/* Removed per-API error display as global fetchError is now handled above */}
 
           {!isLoadingData && allServerInstances.length === 0 && viewMode === 'table' && (
              <Card className="text-center py-10 shadow-lg flex-grow flex flex-col justify-center items-center bg-card">
@@ -676,3 +667,6 @@ const TopologyPage: NextPage = () => {
 };
 
 export default TopologyPage;
+
+
+    
