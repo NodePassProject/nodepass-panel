@@ -56,7 +56,7 @@ interface ClientNode extends NodeBase {
   type: 'client';
   clientConnectsToServerAddress: string | null;
   localTargetAddress: string | null;
-  connectedToServerId: string | null; // ID of the server instance it's connected to
+  connectedToServerId: string | null; 
 }
 
 type DraggableNode = ServerNode | ClientNode;
@@ -67,7 +67,7 @@ interface ConnectionLine {
   y1: number;
   x2: number;
   y2: number;
-  type: 'direct'; // Simplified for server-to-client direct lines
+  type: 'direct'; 
 }
 
 interface DraggingNodeInfo {
@@ -79,7 +79,7 @@ interface DraggingNodeInfo {
   initialNodeY: number;
 }
 
-// Helper functions to parse URL components
+
 function parseTunnelAddr(urlString: string): string | null {
   try {
     const url = new URL(urlString);
@@ -122,21 +122,23 @@ function splitHostPort(address: string | null): { host: string | null; port: str
     return { host: ipv6WithPortMatch[1], port: ipv6WithPortMatch[2] };
   }
   const lastColonIndex = address.lastIndexOf(':');
-  if (lastColonIndex === -1 || address.substring(0, lastColonIndex).includes(':')) {
+  if (lastColonIndex === -1 || address.substring(0, lastColonIndex).includes(':')) { // Check if it's an IPv6 host without port
     return { host: address, port: null };
   }
   const potentialHost = address.substring(0, lastColonIndex);
   const potentialPort = address.substring(lastColonIndex + 1);
+
   if (potentialPort && !isNaN(parseInt(potentialPort, 10)) && parseInt(potentialPort, 10).toString() === potentialPort) {
     return { host: potentialHost, port: potentialPort };
   }
-  return { host: address, port: null };
+  return { host: address, port: null }; // Treat as host if port parsing fails
 }
+
 
 const NODE_WIDTH = 280;
 const NODE_HEIGHT_SERVER = 120;
 const NODE_HEIGHT_CLIENT = 100;
-const GRAPH_CLIENT_OFFSET_X = 350;
+const GRAPH_CLIENT_OFFSET_X = 350; 
 const GRAPH_CLIENT_SPACING_Y = 30;
 
 
@@ -175,7 +177,7 @@ const TopologyPage: NextPage = () => {
           status: inst.status,
           apiId: inst.apiId,
           apiName: inst.apiName,
-          position: { x: 50, y: 50 }, // Default for table, updated for graph
+          position: { x: 50, y: 50 }, 
           serverListeningAddress: parseTunnelAddr(inst.url),
           serverForwardsToAddress: parseTargetAddr(inst.url),
           originalInstance: inst,
@@ -188,16 +190,15 @@ const TopologyPage: NextPage = () => {
           status: inst.status,
           apiId: inst.apiId,
           apiName: inst.apiName,
-          position: { x: 50, y: 50 }, // Default, updated for graph
+          position: { x: 50, y: 50 }, 
           clientConnectsToServerAddress: parseTunnelAddr(inst.url),
           localTargetAddress: parseTargetAddr(inst.url),
-          connectedToServerId: null, // Will be determined next
+          connectedToServerId: null, 
           originalInstance: inst,
         });
       }
     });
 
-    // Determine client connections
     cNodes.forEach(client => {
       const clientConnAddr = client.clientConnectsToServerAddress;
       if (!clientConnAddr) return;
@@ -227,7 +228,7 @@ const TopologyPage: NextPage = () => {
     if (isLoadingApiConfig) return;
     if (apiConfigsList.length === 0) {
       setIsLoadingData(false);
-      setFetchErrors(new Map().set("global", "无 API 连接配置。请先添加。"));
+      setFetchErrors(new Map().set("global", "无API配置。请先添加配置。"));
       setAllServerInstances([]); setAllClientInstances([]); setLines([]);
       return;
     }
@@ -242,17 +243,17 @@ const TopologyPage: NextPage = () => {
       const tokenVal = getToken(config.id);
 
       if (!apiRootVal || !tokenVal) {
-        currentErrors.set(config.id, `API 配置 "${config.name}" 无效或不完整。`);
+        currentErrors.set(config.id, `API配置"${config.name}"无效。`);
         continue;
       }
       
       try {
-        console.log(`Topology: Fetching instances for API: ${config.name} (ID: ${config.id}) from ${apiRootVal}`);
+        console.log(`拓扑: 从API ${config.name} (ID: ${config.id}) 加载实例，URL: ${apiRootVal}`);
         const data = await nodePassApi.getInstances(apiRootVal, tokenVal);
         combinedInstances.push(...data.map(inst => ({ ...inst, apiId: config.id, apiName: config.name })));
       } catch (err: any) {
-        console.error(`Topology: Error fetching instances from "${config.name}":`, err);
-        currentErrors.set(config.id, `加载 "${config.name}" 实例失败: ${err.message || '未知错误'}`);
+        console.error(`拓扑: 从 "${config.name}" 加载实例失败:`, err);
+        currentErrors.set(config.id, `加载"${config.name}"实例失败: ${err.message || '未知错误'}`);
       }
     }
     setFetchErrors(currentErrors);
@@ -281,7 +282,7 @@ const TopologyPage: NextPage = () => {
 
     const serverEl = nodeRefs.current.get(`server-${serverNode.id}`);
     if (!serverEl) {
-        console.warn(`Server element for ${serverNode.id} not found in refs.`);
+        console.warn(`服务器元素 ${serverNode.id} 未找到。`);
         setLines([]);
         return;
     }
@@ -289,16 +290,14 @@ const TopologyPage: NextPage = () => {
     connectedClients.forEach(client => {
       const clientEl = nodeRefs.current.get(`client-${client.id}`);
       if (!clientEl) {
-        console.warn(`Client element for ${client.id} not found in refs.`);
+        console.warn(`客户端元素 ${client.id} 未找到。`);
         return;
       }
       
-      // Use the node's state position for line calculation, assuming it's canvas-relative
       const x1_state = serverNode.position.x + NODE_WIDTH / 2;
       const y1_state = serverNode.position.y + NODE_HEIGHT_SERVER / 2;
       const x2_state = client.position.x + NODE_WIDTH / 2;
       const y2_state = client.position.y + NODE_HEIGHT_CLIENT / 2;
-
 
       newLines.push({
         id: `line-${serverNode.id}-${client.id}`,
@@ -506,7 +505,7 @@ const TopologyPage: NextPage = () => {
       <AppLayout>
         <Card className="max-w-md mx-auto mt-10 shadow-lg">
           <CardHeader><CardTitle className="text-destructive flex items-center justify-center"><AlertTriangle className="h-6 w-6 mr-2" />错误</CardTitle></CardHeader>
-          <CardContent><p>{globalError}</p><Button onClick={() => router.push('/connections')} className="mt-6">管理 API 连接</Button></CardContent>
+          <CardContent><p>{globalError}</p><Button onClick={() => router.push('/connections')} className="mt-6">管理API连接</Button></CardContent>
         </Card>
       </AppLayout>
     );
@@ -563,8 +562,8 @@ const TopologyPage: NextPage = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>API 名称</TableHead>
-                    <TableHead>服务器 ID</TableHead>
+                    <TableHead>API名称</TableHead>
+                    <TableHead>服务器ID</TableHead>
                     <TableHead>状态</TableHead>
                     <TableHead>URL</TableHead>
                     <TableHead>监听地址</TableHead>
@@ -575,8 +574,15 @@ const TopologyPage: NextPage = () => {
                 <TableBody>
                   {allServerInstances.map((server) => (
                     <TableRow key={server.id}>
-                      <TableCell>
-                        <Badge variant="outline">{server.apiName}</Badge>
+                       <TableCell className="max-w-[150px] sm:max-w-xs truncate">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="cursor-default">{server.apiName}</span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{server.apiName}</p>
+                          </TooltipContent>
+                        </Tooltip>
                       </TableCell>
                       <TableCell className="font-mono text-xs">{server.id.substring(0,12)}...</TableCell>
                       <TableCell><InstanceStatusBadge status={server.status} /></TableCell>
@@ -636,7 +642,7 @@ const TopologyPage: NextPage = () => {
           <div className="mt-8 p-4 bg-muted/30 rounded-lg text-xs text-muted-foreground shadow-sm">
             <div className="flex items-center font-semibold mb-2"><Network className="h-4 w-4 mr-2 text-primary shrink-0" />拓扑说明</div>
             <ul className="list-disc list-inside space-y-1.5 pl-1">
-              <li>默认显示所有 API 源的服务器实例列表。点击 "查看拓扑" 可切换到图形视图，显示选定服务器及其连接的客户端。</li>
+              <li>默认显示所有API源的服务器实例列表。点击 "查看拓扑" 可切换到图形视图，显示选定服务器及其连接的客户端。</li>
               <li>在图形视图中，服务器和客户端节点均可拖动以调整布局。</li>
               <li>连接线从 <strong className="text-primary">服务器</strong> 指向 <strong className="text-accent">客户端</strong>，表示客户端通过其 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> 连接到服务器的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> (监听地址)。</li>
               <li>客户端“落地”地址指其本地转发目标 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;target_addr&gt;</code>。</li>
@@ -649,3 +655,5 @@ const TopologyPage: NextPage = () => {
 };
 
 export default TopologyPage;
+
+    
