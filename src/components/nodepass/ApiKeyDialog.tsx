@@ -13,7 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { KeyRound } from 'lucide-react';
+import { KeyRound, Eye, EyeOff } from 'lucide-react';
 import type { NamedApiConfig } from '@/hooks/use-api-key'; 
 
 interface ApiConfigDialogProps {
@@ -29,6 +29,7 @@ export function ApiConfigDialog({ open, onOpenChange, onSave, currentConfig, isE
   const [apiUrlInput, setApiUrlInput] = useState('');
   const [tokenInput, setTokenInput] = useState('');
   const [prefixPathInput, setPrefixPathInput] = useState('');
+  const [showToken, setShowToken] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -36,6 +37,7 @@ export function ApiConfigDialog({ open, onOpenChange, onSave, currentConfig, isE
       setApiUrlInput(currentConfig?.apiUrl || 'http://localhost:3000');
       setTokenInput(currentConfig?.token || '');
       setPrefixPathInput(currentConfig?.prefixPath || '');
+      setShowToken(false); // Reset token visibility when dialog opens
     }
   }, [open, currentConfig]);
 
@@ -67,7 +69,7 @@ export function ApiConfigDialog({ open, onOpenChange, onSave, currentConfig, isE
               {isEditing ? '编辑 API 连接' : '添加 API 连接'}
             </DialogTitle>
             <DialogDescription>
-              输入 NodePass API 名称、URL、令牌和可选前缀路径 (本地存储)。API 端点固定为 v1 (例: {displayApiUrl}{displayPrefixPath}/v1/*)。
+              输入 NodePass API 名称、URL、令牌和可选前缀路径。API 端点固定为 v1 (例: {displayApiUrl}{displayPrefixPath}/v1/*)。
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -93,14 +95,27 @@ export function ApiConfigDialog({ open, onOpenChange, onSave, currentConfig, isE
             </div>
             <div className="space-y-1">
               <Label htmlFor="token">令牌</Label>
-              <Input
-                id="token"
-                value={tokenInput}
-                onChange={(e) => setTokenInput(e.target.value)}
-                placeholder="输入令牌"
-                type="password"
-                required
-              />
+              <div className="relative">
+                <Input
+                  id="token"
+                  value={tokenInput}
+                  onChange={(e) => setTokenInput(e.target.value)}
+                  placeholder="输入令牌"
+                  type={showToken ? 'text' : 'password'}
+                  required
+                  className="pr-10" // Add padding to make space for the icon
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                  onClick={() => setShowToken(!showToken)}
+                  aria-label={showToken ? '隐藏令牌' : '显示令牌'}
+                >
+                  {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </div>
             </div>
             <div className="space-y-1">
               <Label htmlFor="prefix-path">前缀路径 (可选)</Label>
