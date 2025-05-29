@@ -15,6 +15,7 @@ import { ChartContainer, ChartTooltipContent, type ChartConfig } from "@/compone
 import { Loader2, RefreshCw, AlertTriangle, BarChart3, List } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Server, Smartphone } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 
 
 interface InstanceWithApiDetails extends Instance {
@@ -55,62 +56,62 @@ const chartConfig = {
 
 
 const TrafficPage: NextPage = () => {
-  const { apiConfigsList, isLoading: isLoadingApiConfig, getApiRootUrl, getToken } = useApiConfig();
-  const [allInstances, setAllInstances] = useState<InstanceWithApiDetails[]>([]);
-  const [isLoadingData, setIsLoadingData] = useState(true);
-  const [fetchErrors, setFetchErrors] = useState<Map<string, string>>(new Map());
+  const { apiConfigsList, isLoading: isLoadingApiConfig, getApiRootUrl, getToken, getApiConfigById } = useApiConfig();
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
-  const fetchData = useCallback(async () => {
-    if (isLoadingApiConfig) {
-      setIsLoadingData(false);
+
+  const { data: allInstancesData, isLoading: isLoadingData, error: fetchError, refetch } = useQuery<
+    InstanceWithApiDetails[],
+    Error,
+    InstanceWithApiDetails[]
+  >({
+    queryKey: ['allInstancesForTraffic', apiConfigsList.map(c => c.id).join(',')],
+    queryFn: async () => {
       if (apiConfigsList.length === 0) {
-          setFetchErrors(new Map().set("global", "无API配置。请先添加。"));
+        return [];
       }
-      setAllInstances([]);
-      return;
-    }
-     if (apiConfigsList.length === 0) {
-      setIsLoadingData(false);
-      setFetchErrors(new Map().set("global", "无API配置。请先添加。"));
-      setAllInstances([]);
-      return;
-    }
-
-    setIsLoadingData(true);
-    setFetchErrors(new Map());
-    let combinedInstances: InstanceWithApiDetails[] = [];
-    const currentErrors = new Map<string, string>();
-
-    for (const config of apiConfigsList) {
-      const apiRootVal = getApiRootUrl(config.id);
-      const tokenVal = getToken(config.id);
-
-      if (!apiRootVal || !tokenVal) {
-        currentErrors.set(config.id, `API配置 "${config.name}" 无效。`);
-        continue;
+      let combinedInstances: InstanceWithApiDetails[] = [];
+      for (const config of apiConfigsList) {
+        const apiRootVal = getApiRootUrl(config.id);
+        const tokenVal = getToken(config.id);
+        if (!apiRootVal || !tokenVal) {
+          console.warn(`TrafficPage: API config "${config.name}" is invalid, skipping.`);
+          continue;
+        }
+        try {
+          const data = await nodePassApi.getInstances(apiRootVal, tokenVal);
+          combinedInstances.push(...data.map(inst => ({ ...inst, apiId: config.id, apiName: config.name })));
+        } catch (err: any) {
+          console.error(`TrafficPage: Failed to load instances from "${config.name}":`, err);
+          // Optionally, collect these errors to display them
+        }
       }
-
-      try {
-        const data = await nodePassApi.getInstances(apiRootVal, tokenVal);
-        combinedInstances.push(...data.map(inst => ({ ...inst, apiId: config.id, apiName: config.name })));
-      } catch (err: any) {
-        console.error(`从 "${config.name}" 加载实例失败:`, err);
-        currentErrors.set(config.id, `加载 "${config.name}" 实例失败: ${err.message || '未知错误'}`);
-      }
+      return combinedInstances;
+    },
+    enabled: !isLoadingApiConfig && apiConfigsList.length > 0,
+    refetchOnMount: 'always', // Fetch when page is mounted/navigated to
+    refetchOnWindowFocus: true, // Fetch when window regains focus
+    onSuccess: () => {
+      setLastRefreshed(new Date());
     }
-    setFetchErrors(currentErrors);
-    setAllInstances(combinedInstances);
-    setIsLoadingData(false);
-    setLastRefreshed(new Date());
-  }, [apiConfigsList, isLoadingApiConfig, getApiRootUrl, getToken]);
+  });
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  const allInstances = allInstancesData || [];
+  const fetchErrors = useMemo(() => {
+    const errors = new Map<string, string>();
+    if (isLoadingApiConfig && apiConfigsList.length === 0) {
+      errors.set("global", "无API配置。请先添加。");
+    } else if (fetchError) {
+      // This is a general query error, might be harder to map to specific API
+      errors.set("global", `加载数据失败: ${fetchError.message}`);
+    }
+    // More granular error tracking would require individual queries per API config
+    return errors;
+  }, [isLoadingApiConfig, apiConfigsList, fetchError]);
+
 
   const overallTrafficData = useMemo(() => {
-    if (isLoadingData || allInstances.length === 0) return [];
+    if (allInstances.length === 0) return [];
     const totals = allInstances.reduce((acc, inst) => {
       acc.tcpRx += inst.tcprx;
       acc.tcpTx += inst.tcptx;
@@ -125,7 +126,11 @@ const TrafficPage: NextPage = () => {
       { name: chartConfig.udpRx.label, total: totals.udpRx, fill: "var(--color-udpRx)" },
       { name: chartConfig.udpTx.label, total: totals.udpTx, fill: "var(--color-udpTx)" },
     ];
-  }, [allInstances, isLoadingData]);
+  }, [allInstances]);
+
+  const handleRefresh = () => {
+    refetch();
+  };
 
   if (isLoadingApiConfig) {
     return (
@@ -137,7 +142,7 @@ const TrafficPage: NextPage = () => {
       </AppLayout>
     );
   }
-  
+
   const globalError = fetchErrors.get("global");
   if (globalError && !isLoadingData) {
     return (
@@ -157,7 +162,7 @@ const TrafficPage: NextPage = () => {
         <h1 className="text-3xl font-bold">流量统计</h1>
         <div className="flex items-center gap-2">
           {lastRefreshed && <span className="text-xs text-muted-foreground">刷新: {lastRefreshed.toLocaleTimeString()}</span>}
-          <Button variant="outline" onClick={fetchData} disabled={isLoadingData}>
+          <Button variant="outline" onClick={handleRefresh} disabled={isLoadingData}>
             <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingData ? 'animate-spin' : ''}`} />
             {isLoadingData ? '刷新中...' : '刷新数据'}
           </Button>
@@ -171,7 +176,7 @@ const TrafficPage: NextPage = () => {
               <Card key={apiId} className="bg-destructive/10 border-destructive/30 shadow-md">
                 <CardContent className="p-3 text-sm text-destructive flex items-start">
                   <AlertTriangle className="h-5 w-5 mr-2.5 shrink-0 mt-0.5" />
-                  <div><p className="font-semibold">加载错误 (API: {apiConfigsList.find(c => c.id === apiId)?.name || apiId})</p><p>{errorMsg}</p></div>
+                  <div><p className="font-semibold">加载错误 (API: {getApiConfigById(apiId)?.name || apiId})</p><p>{errorMsg}</p></div>
                 </CardContent>
               </Card>
             )
@@ -210,7 +215,7 @@ const TrafficPage: NextPage = () => {
                       <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => formatBytes(value)} />
                       <RechartsTooltip
                         cursor={{ fill: 'hsl(var(--muted))', radius: 4 }}
-                        content={<ChartTooltipContent formatter={(value, name) => formatBytes(value as number)} />}
+                        content={<ChartTooltipContent formatter={(value) => formatBytes(value as number)} />}
                       />
                       <Bar dataKey="total" radius={4}>
                         {overallTrafficData.map((entry, index) => (
@@ -251,8 +256,8 @@ const TrafficPage: NextPage = () => {
                         <TableCell className="truncate max-w-[150px]">{instance.apiName}</TableCell>
                         <TableCell className="font-mono text-xs truncate max-w-[100px]">{instance.id.substring(0,12)}...</TableCell>
                         <TableCell>
-                           <Badge 
-                            variant={instance.type === 'server' ? 'default' : 'accent'} 
+                           <Badge
+                            variant={instance.type === 'server' ? 'default' : 'accent'}
                             className="items-center whitespace-nowrap text-xs"
                           >
                             {instance.type === 'server' ? <Server className="h-3 w-3 mr-1" /> : <Smartphone className="h-3 w-3 mr-1" />}

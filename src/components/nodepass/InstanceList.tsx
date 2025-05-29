@@ -42,6 +42,7 @@ interface InstanceListProps {
 }
 
 export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceListProps) {
+  // console.log(`InstanceList rendering with API ID: ${apiId}, API Name: ${apiName}`); // Diagnostic log
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -54,7 +55,6 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
     queryKey: ['instances', apiId],
     queryFn: () => {
       if (!apiId || !apiRoot || !apiToken) throw new Error("API 配置不完整，无法获取实例。");
-      console.log(`InstanceList: Fetching instances for API ID: ${apiId}, Root: ${apiRoot}, Token Present: ${!!apiToken}`);
       return nodePassApi.getInstances(apiRoot, apiToken);
     },
     enabled: !!apiId && !!apiRoot && !!apiToken,
@@ -127,7 +127,7 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
       </TableRow>
     ));
   };
-  
+
 
   return (
     <Card className="shadow-lg mt-6">
@@ -180,8 +180,8 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
                   <TableRow key={instance.id}>
                     <TableCell className="font-medium truncate max-w-xs">{instance.id}</TableCell>
                     <TableCell>
-                      <Badge 
-                        variant={instance.type === 'server' ? 'default' : 'accent'} 
+                      <Badge
+                        variant={instance.type === 'server' ? 'default' : 'accent'}
                         className="items-center whitespace-nowrap text-xs"
                       >
                         {instance.type === 'server' ? <Server className="h-3 w-3 mr-1" /> : <Smartphone className="h-3 w-3 mr-1" />}
@@ -221,14 +221,14 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
               ) : (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center h-24">
-                    {isLoadingInstances 
-                      ? "加载中..." 
-                      : !apiId 
-                        ? "请先选择或添加API连接。"
+                    {isLoadingInstances
+                      ? "加载中..."
+                      : !apiId
+                        ? "请选择或添加一个API连接。"
                         : searchTerm && (!filteredInstances || filteredInstances.length === 0)
-                          ? "无搜索匹配实例。"
+                          ? "无匹配搜索结果的实例。"
                           : instances && instances.length === 0
-                            ? "无实例。"
+                            ? "当前API连接下无实例。"
                             : "加载中或无实例。"
                     }
                   </TableCell>

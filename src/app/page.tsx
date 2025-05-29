@@ -14,17 +14,17 @@ import { useToast } from '@/hooks/use-toast';
 
 
 export default function HomePage() {
-  const { 
-    activeApiConfig, 
+  const {
+    activeApiConfig,
     apiConfigsList,
-    addOrUpdateApiConfig, 
+    addOrUpdateApiConfig,
     isLoading: isLoadingApiConfig,
     setActiveApiConfigId,
-    getApiRootUrl, 
-    getToken       
+    getApiRootUrl,
+    getToken
   } = useApiConfig();
   const { toast } = useToast();
-  
+
   const [isApiConfigDialogOpenForSetup, setIsApiConfigDialogOpenForSetup] = useState(false);
   const [editingApiConfigForSetup, setEditingApiConfigForSetup] = useState<NamedApiConfig | null>(null);
 
@@ -32,14 +32,14 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!isLoadingApiConfig && apiConfigsList.length === 0 && !activeApiConfig) {
-      setEditingApiConfigForSetup(null); 
+      setEditingApiConfigForSetup(null);
       setIsApiConfigDialogOpenForSetup(true);
     }
   }, [apiConfigsList, isLoadingApiConfig, activeApiConfig]);
 
   const handleSaveApiConfigForSetup = (configToSave: Omit<NamedApiConfig, 'id'> & { id?: string }) => {
     const savedConfig = addOrUpdateApiConfig(configToSave);
-    setActiveApiConfigId(savedConfig.id); 
+    setActiveApiConfigId(savedConfig.id);
     setEditingApiConfigForSetup(null);
     setIsApiConfigDialogOpenForSetup(false);
     toast({
@@ -47,7 +47,7 @@ export default function HomePage() {
       description: `“${savedConfig.name}”已保存并激活。`,
     });
   };
-  
+
   const handleOpenApiConfigDialogForSetup = () => {
     setEditingApiConfigForSetup(null);
     setIsApiConfigDialogOpenForSetup(true);
@@ -55,6 +55,8 @@ export default function HomePage() {
 
   const currentApiRoot = activeApiConfig ? getApiRootUrl(activeApiConfig.id) : null;
   const currentToken = activeApiConfig ? getToken(activeApiConfig.id) : null;
+
+  // console.log('HomePage rendering. Active API Config:', activeApiConfig); // Diagnostic log
 
   if (isLoadingApiConfig) {
     return (
@@ -66,7 +68,7 @@ export default function HomePage() {
       </AppLayout>
     );
   }
-  
+
   return (
     <AppLayout>
         {activeApiConfig ? (
@@ -77,18 +79,18 @@ export default function HomePage() {
                 创建新实例
               </Button>
             </div>
-            <InstanceList 
-              key={activeApiConfig.id} 
+            <InstanceList
+              key={activeApiConfig.id}
               apiId={activeApiConfig.id}
               apiName={activeApiConfig.name}
               apiRoot={currentApiRoot}
               apiToken={currentToken}
             />
-            <EventLog 
+            <EventLog
               apiId={activeApiConfig.id}
+              apiName={activeApiConfig.name}
               apiRoot={currentApiRoot}
               apiToken={currentToken}
-              apiName={activeApiConfig.name}
             />
           </div>
         ) : (
@@ -97,8 +99,8 @@ export default function HomePage() {
               {apiConfigsList.length > 0 ? '未选择 API 连接' : '需要 API 连接'}
             </h2>
             <p className="text-muted-foreground mb-6">
-              {apiConfigsList.length > 0 
-                ? '请选择或添加 API 连接。' 
+              {apiConfigsList.length > 0
+                ? '请选择或添加 API 连接。'
                 : '请先添加 API 连接。'}
             </p>
             {apiConfigsList.length === 0 && (

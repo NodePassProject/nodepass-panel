@@ -6,7 +6,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useApiConfig } from '@/hooks/use-api-key';
 import { nodePassApi } from '@/lib/api';
 import type { Instance } from '@/types/nodepass';
-import { AlertTriangle, Loader2, RefreshCw, Network, ServerIcon, SmartphoneIcon, Move, Link2, Eye } from 'lucide-react';
+import { AlertTriangle, Loader2, RefreshCw, Network, ServerIcon, SmartphoneIcon, Move, Link2, Eye, List } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -119,7 +119,7 @@ function splitHostPort(address: string | null): { host: string | null; port: str
     return { host: ipv6WithPortMatch[1], port: ipv6WithPortMatch[2] };
   }
   const lastColonIndex = address.lastIndexOf(':');
-  if (lastColonIndex === -1 || address.substring(0, lastColonIndex).includes(':')) { 
+  if (lastColonIndex === -1 || address.substring(0, lastColonIndex).includes(':')) {
     return { host: address, port: null };
   }
   const potentialHost = address.substring(0, lastColonIndex);
@@ -132,7 +132,7 @@ function splitHostPort(address: string | null): { host: string | null; port: str
 }
 
 
-const NODE_WIDTH = 280;
+const NODE_WIDTH = 280; // Increased width for better content display
 const NODE_HEIGHT_SERVER = 120;
 const NODE_HEIGHT_CLIENT = 100;
 const GRAPH_CLIENT_OFFSET_X = NODE_WIDTH + 70;
@@ -257,7 +257,7 @@ const TopologyPage: NextPage = () => {
       }
 
       try {
-        console.log(`拓扑: 从API ${config.name} (ID: ${config.id}) 加载实例，URL: ${apiRootVal}`);
+        // console.log(`拓扑: 从API ${config.name} (ID: ${config.id}) 加载实例，URL: ${apiRootVal}`);
         const data = await nodePassApi.getInstances(apiRootVal, tokenVal);
         combinedInstances.push(...data.map(inst => ({ ...inst, apiId: config.id, apiName: config.name })));
       } catch (err: any) {
@@ -295,21 +295,23 @@ const TopologyPage: NextPage = () => {
       return;
     }
 
-    const serverX_out = serverNode.position.x + NODE_WIDTH;
+    const serverX_out = serverNode.position.x + NODE_WIDTH; // Right middle of server
     const serverY_out = serverNode.position.y + NODE_HEIGHT_SERVER / 2;
 
     connectedClients.forEach(client => {
       const clientEl = nodeRefs.current.get(`client-${client.id}`);
       if (!clientEl) return;
 
-      const clientX_in = client.position.x;
+      const clientX_in = client.position.x; // Left middle of client
       const clientY_in = client.position.y + NODE_HEIGHT_CLIENT / 2;
-      
-      const cpX = serverX_out + (clientX_in - serverX_out) / 2; 
-      const cpY = serverY_out;
 
-      const path = `M ${serverX_out} ${serverY_out} Q ${cpX} ${cpY} ${clientX_in} ${clientY_in}`;
+      // Control points for a smoother curve from server's right to client's left
+      const controlPointX1 = serverX_out + Math.abs(clientX_in - serverX_out) * 0.5;
+      const controlPointY1 = serverY_out;
+      const controlPointX2 = clientX_in - Math.abs(clientX_in - serverX_out) * 0.5;
+      const controlPointY2 = clientY_in;
 
+      const path = `M ${serverX_out} ${serverY_out} C ${controlPointX1} ${controlPointY1}, ${controlPointX2} ${controlPointY2}, ${clientX_in} ${clientY_in}`;
 
       newLines.push({
         id: `line-${serverNode.id}-${client.id}`,
@@ -339,14 +341,14 @@ const TopologyPage: NextPage = () => {
       .map((client, index) => ({
         ...client,
         position: {
-          x: 50 + GRAPH_CLIENT_OFFSET_X, 
-          y: 50 + (index * (NODE_HEIGHT_CLIENT + GRAPH_CLIENT_SPACING_Y)) 
+          x: 50 + GRAPH_CLIENT_OFFSET_X,
+          y: 50 + (index * (NODE_HEIGHT_CLIENT + GRAPH_CLIENT_SPACING_Y))
         }
       }));
 
     const serverInitialY = connectedClients.length > 0
       ? 50 + ((connectedClients.length - 1) * (NODE_HEIGHT_CLIENT + GRAPH_CLIENT_SPACING_Y) / 2) + (NODE_HEIGHT_CLIENT / 2) - (NODE_HEIGHT_SERVER / 2)
-      : 150; 
+      : 150;
 
     setSelectedServerForGraph({...server, position: { x: 50, y: Math.max(50, serverInitialY) }});
     setClientsForSelectedServer(connectedClients);
@@ -528,7 +530,10 @@ const TopologyPage: NextPage = () => {
             <h1 className="text-2xl sm:text-3xl font-bold">实例连接拓扑</h1>
             <div className='flex items-center gap-2'>
               {viewMode === 'graph' && (
-                <Button variant="outline" onClick={handleBackToTable} size="sm">返回服务器列表</Button>
+                <Button variant="outline" onClick={handleBackToTable} size="sm">
+                  <List className="mr-2 h-4 w-4" />
+                  返回服务器列表
+                </Button>
               )}
               {lastRefreshed && <span className="text-xs text-muted-foreground">刷新: {lastRefreshed.toLocaleTimeString()}</span>}
               <Button variant="outline" onClick={fetchDataAndProcess} disabled={isLoadingData} size="sm">
@@ -545,7 +550,7 @@ const TopologyPage: NextPage = () => {
                   <Card key={apiId} className="bg-destructive/10 border-destructive/30 shadow-md">
                     <CardContent className="p-3 text-sm text-destructive flex items-start">
                       <AlertTriangle className="h-5 w-5 mr-2.5 shrink-0 mt-0.5" />
-                      <div><p className="font-semibold">加载错误 (API: {apiConfigsList.find(c => c.id === apiId)?.name || apiId})</p><p>{errorMsg}</p></div>
+                      <div><p className="font-semibold">加载错误 (API: {getApiConfigById(apiId)?.name || apiId})</p><p>{errorMsg}</p></div>
                     </CardContent>
                   </Card>
                 )
@@ -623,9 +628,9 @@ const TopologyPage: NextPage = () => {
                     key={line.id}
                     d={line.pathData}
                     stroke={line.type === 'intra-api' ? 'hsl(var(--primary))' : 'hsl(var(--accent))'}
-                    strokeWidth="2"
+                    strokeWidth="1.5"
                     fill="none"
-                    className="opacity-75 group-hover:opacity-100 transition-opacity"
+                    className="opacity-75"
                   />
                 ))}
               </svg>
@@ -640,7 +645,7 @@ const TopologyPage: NextPage = () => {
               )}
             </div>
           )}
-          
+
           <InstanceDetailsModal
             instance={selectedInstanceForDetails}
             open={isDetailsModalOpen}
