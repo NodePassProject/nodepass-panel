@@ -3,7 +3,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Moon, Sun, Settings, LogOut, PlusCircle, Edit3, Check, Trash2, ListTree, Network, BarChartHorizontalBig, Home } from 'lucide-react';
+import { Moon, Sun, Settings, LogOut, PlusCircle, Edit3, Check, ListTree, Network, BarChartHorizontalBig, Home, Trash2 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import {
@@ -41,12 +41,13 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
       title: '活动连接已切换',
       description: `已连接到 “${newActiveConf?.name}”。`,
     });
-    router.push('/');
+    router.push('/'); // Navigate to home to reflect changes, e.g., instance list
   };
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 items-center px-4 sm:px-6 lg:px-8"> {/* Removed justify-between */}
+      <div className="container flex h-16 items-center px-4 sm:px-6 lg:px-8">
+        {/* Left Group: Logo, Title, Active API Name */}
         <div className="flex items-center">
           <Link href="/" className="flex items-center" aria-label="主页">
             <Home className="mr-2 h-6 w-6 text-primary" />
@@ -58,7 +59,9 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
             </span>
           )}
         </div>
-        <div className="flex items-center space-x-2 ml-auto"> {/* Added ml-auto */}
+
+        {/* Right Group: Theme Toggle, Settings Dropdown - This group gets ml-auto */}
+        <div className="flex items-center space-x-2 ml-auto">
           <Button
             variant="ghost"
             size="icon"
