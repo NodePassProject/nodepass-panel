@@ -3,7 +3,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Moon, Sun, Settings, LogOut, PlusCircle, Edit3, Check, Trash2, ListTree, Network } from 'lucide-react';
+import { Moon, Sun, Settings, LogOut, PlusCircle, Edit3, Check, Trash2, ListTree, Network, BarChartHorizontalBig } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import {
@@ -41,16 +41,7 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
       title: '活动连接已切换',
       description: `已连接到 “${newActiveConf?.name}”。`,
     });
-    router.push('/'); // Navigate to homepage after switching
-  };
-
-  const handleDeleteApiConfig = (id: string, name: string) => {
-    deleteApiConfig(id);
-    toast({
-      title: '连接已删除',
-      description: `连接 “${name}” 已被删除。`,
-      variant: 'destructive'
-    });
+    router.push('/'); 
   };
 
   return (
@@ -125,11 +116,17 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
               )}
               
               <DropdownMenuSeparator />
-              <DropdownMenuLabel>可视化</DropdownMenuLabel>
+              <DropdownMenuLabel>可视化与分析</DropdownMenuLabel>
                <Link href="/topology" passHref legacyBehavior>
                 <DropdownMenuItem>
                   <Network className="mr-2 h-4 w-4" />
                   <span>连接拓扑图</span>
+                </DropdownMenuItem>
+              </Link>
+              <Link href="/traffic" passHref legacyBehavior>
+                <DropdownMenuItem>
+                  <BarChartHorizontalBig className="mr-2 h-4 w-4" />
+                  <span>流量统计</span>
                 </DropdownMenuItem>
               </Link>
 
