@@ -3,7 +3,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Moon, Sun, Settings, LogOut, PlusCircle, Edit3, Check, Trash2, ListTree, Network, BarChartHorizontalBig } from 'lucide-react';
+import { Moon, Sun, Settings, LogOut, PlusCircle, Edit3, Check, Trash2, ListTree, Network, BarChartHorizontalBig, Home } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import {
@@ -30,7 +30,7 @@ interface HeaderProps {
 
 export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiConfig }: HeaderProps) {
   const { setTheme, theme } = useTheme();
-  const { apiConfigsList, activeApiConfig, setActiveApiConfigId, deleteApiConfig } = useApiConfig();
+  const { apiConfigsList, activeApiConfig, setActiveApiConfigId } = useApiConfig();
   const { toast } = useToast();
   const router = useRouter();
 
@@ -41,28 +41,24 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
       title: '活动连接已切换',
       description: `已连接到 “${newActiveConf?.name}”。`,
     });
-    router.push('/'); 
+    router.push('/');
   };
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
+      <div className="container flex h-16 items-center px-4 sm:px-6 lg:px-8"> {/* Removed justify-between */}
         <div className="flex items-center">
           <Link href="/" className="flex items-center" aria-label="主页">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="mr-2 text-primary">
-              <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M2 17L12 22L22 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M2 12L12 17L22 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            <h1 className="text-2xl font-bold tracking-tight">NodePass 管理器</h1>
+            <Home className="mr-2 h-6 w-6 text-primary" />
+            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">NodePass 管理器</h1>
           </Link>
            {activeApiConfig && (
-            <span className="ml-2 text-xs px-2 py-1 bg-muted text-muted-foreground rounded-full hidden sm:inline-block">
+            <span className="ml-3 text-xs px-2 py-1 bg-muted text-muted-foreground rounded-full hidden sm:inline-block">
               已连接: {activeApiConfig.name}
             </span>
           )}
         </div>
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 ml-auto"> {/* Added ml-auto */}
           <Button
             variant="ghost"
             size="icon"
@@ -101,8 +97,8 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
                   <DropdownMenuPortal>
                     <DropdownMenuSubContent className="max-h-60 overflow-y-auto">
                       {apiConfigsList.map(config => (
-                        <DropdownMenuItem 
-                          key={config.id} 
+                        <DropdownMenuItem
+                          key={config.id}
                           onClick={() => handleSwitchApiConfig(config.id)}
                           disabled={activeApiConfig?.id === config.id}
                         >
@@ -114,7 +110,7 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
                   </DropdownMenuPortal>
                 </DropdownMenuSub>
               )}
-              
+
               <DropdownMenuSeparator />
               <DropdownMenuLabel>可视化与分析</DropdownMenuLabel>
                <Link href="/topology" passHref legacyBehavior>
@@ -133,7 +129,7 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
               {hasActiveApiConfig && onClearActiveConfig && (
                  <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={onClearActiveConfig} className="text-destructive hover:!text-destructive focus:!text-destructive">
+                  <DropdownMenuItem onClick={onClearActiveConfig} className="text-destructive hover:!text-destructive focus:!text-destructive focus:!bg-destructive/10">
                       <LogOut className="mr-2 h-4 w-4" />
                       <span>断开当前连接</span>
                   </DropdownMenuItem>
