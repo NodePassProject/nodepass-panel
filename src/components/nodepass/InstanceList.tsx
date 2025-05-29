@@ -19,7 +19,6 @@ import { InstanceStatusBadge } from './InstanceStatusBadge';
 import { InstanceControls } from './InstanceControls';
 import { DeleteInstanceDialog } from './DeleteInstanceDialog';
 import { InstanceDetailsModal } from './InstanceDetailsModal';
-// import { OptimizeInstanceDialog } from './OptimizeInstanceDialog'; // Removed
 import { ModifyInstanceDialog } from './ModifyInstanceDialog';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -48,7 +47,6 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
 
   const [selectedInstanceForDetails, setSelectedInstanceForDetails] = useState<Instance | null>(null);
   const [selectedInstanceForDelete, setSelectedInstanceForDelete] = useState<Instance | null>(null);
-  // const [selectedInstanceForOptimize, setSelectedInstanceForOptimize] = useState<Instance | null>(null); // Removed
   const [selectedInstanceForModify, setSelectedInstanceForModify] = useState<Instance | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -213,11 +211,6 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedInstanceForModify(instance)} aria-label="修改">
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        {/* Removed Optimize Button
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedInstanceForOptimize(instance)} aria-label="优化">
-                          <Wand2 className="h-4 w-4" />
-                        </Button>
-                        */}
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setSelectedInstanceForDelete(instance)} aria-label="删除">
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -231,7 +224,7 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
                     {isLoadingInstances 
                       ? "加载中..." 
                       : !apiId 
-                        ? "请先选择活动 API 连接。"
+                        ? "请先选择或添加API连接。"
                         : searchTerm && (!filteredInstances || filteredInstances.length === 0)
                           ? "无搜索匹配实例。"
                           : instances && instances.length === 0
@@ -259,11 +252,6 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
         onConfirmDelete={(id) => deleteInstanceMutation.mutate(id)}
         isLoading={deleteInstanceMutation.isPending}
       />
-      {/* <OptimizeInstanceDialog
-        instance={selectedInstanceForOptimize}
-        open={!!selectedInstanceForOptimize}
-        onOpenChange={(open) => !open && setSelectedInstanceForOptimize(null)}
-      /> // Removed */}
       <ModifyInstanceDialog
         instance={selectedInstanceForModify}
         open={!!selectedInstanceForModify}

@@ -92,7 +92,7 @@ export function ModifyInstanceDialog({ instance, open, onOpenChange, apiId, apiR
             修改实例配置
           </DialogTitle>
           <DialogDescription>
-            修改实例 <span className="font-semibold">{instance.id}</span> URL (API: {apiName || 'N/A'})。
+            修改实例 <span className="font-semibold">{instance.id.substring(0,12)}...</span> URL (API: {apiName || 'N/A'})。
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
