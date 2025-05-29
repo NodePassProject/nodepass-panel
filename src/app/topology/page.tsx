@@ -10,7 +10,7 @@ import { AlertTriangle, Loader2, RefreshCw, Info, ServerIcon, SmartphoneIcon, Ne
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tooltip, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { InstanceStatusBadge } from '@/components/nodepass/InstanceStatusBadge';
 import { Badge } from '@/components/ui/badge';
@@ -182,6 +182,7 @@ const TopologyPage: NextPage = () => {
         .filter((client): client is ProcessedClientInstance => client !== null);
       
       const currentServerPosition = { x: xOffset, y: yOffset };
+      // Calculate server block height based on number of clients
       const serverBlockHeight = serverNodeBaseHeight + (connectedC.length * clientNodeHeight) + (connectedC.length > 0 ? 20 : 0);
       yOffset += serverBlockHeight + verticalSpacing; 
 
@@ -206,7 +207,7 @@ const TopologyPage: NextPage = () => {
     }
     if (apiConfigsList.length === 0) {
       setIsLoadingData(false);
-      setFetchErrors(new Map().set("global", "无API连接配置，请先添加。"));
+      setFetchErrors(new Map().set("global", "无API连接，请先添加。"));
       setProcessedServers([]);
       setLines([]);
       return;
@@ -247,17 +248,14 @@ const TopologyPage: NextPage = () => {
       return;
     }
     const newLines: ConnectionLine[] = [];
-    const canvasRect = canvasRef.current.getBoundingClientRect(); // Use canvas for offset calculation
 
     processedServers.forEach(server => {
       const serverNodeEl = nodeRefs.current.get(`server-${server.id}`);
       if (!serverNodeEl) return;
 
-      // Server's position is its top-left corner relative to the canvas.
       const serverInfoBox = serverNodeEl.querySelector<HTMLDivElement>('[data-role="server-info-box"]');
-      const serverInfoBoxHeight = serverInfoBox ? serverInfoBox.offsetHeight : 50; // Approx height if not found
+      const serverInfoBoxHeight = serverInfoBox ? serverInfoBox.offsetHeight : 50; 
 
-      // Attach point from server: bottom-center of its info box part
       const serverAttachX = server.position.x + serverNodeEl.offsetWidth / 2;
       const serverAttachY = server.position.y + serverInfoBoxHeight;
 
@@ -266,10 +264,8 @@ const TopologyPage: NextPage = () => {
         const clientNodeEl = nodeRefs.current.get(`client-${client.id}`);
         if (!clientNodeEl) return;
         
-        // Client's position is relative to the server block.
-        // Its absolute position needs to be calculated based on server.position and client's offsetTop/Left within server block.
         const clientAbsoluteX = server.position.x + clientNodeEl.offsetLeft + clientNodeEl.offsetWidth / 2;
-        const clientAbsoluteY = server.position.y + clientNodeEl.offsetTop; // Top of client box
+        const clientAbsoluteY = server.position.y + clientNodeEl.offsetTop;
 
         newLines.push({
           id: `line-${server.id}-${client.id}`,
@@ -293,8 +289,8 @@ const TopologyPage: NextPage = () => {
         window.removeEventListener('resize', calculateLines);
       };
     }
-     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoadingData, processedServers, calculateLines, draggingNodeInfo]); // Add draggingNodeInfo
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoadingData, processedServers, calculateLines, draggingNodeInfo]);
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>, serverId: string) => {
     e.preventDefault();
@@ -303,19 +299,13 @@ const TopologyPage: NextPage = () => {
 
     if (!server || !serverNodeEl || !canvasRef.current) return;
     
-    // Calculate initial offset of mouse from the node's top-left corner
-    const nodeRect = serverNodeEl.getBoundingClientRect();
     const canvasRect = canvasRef.current.getBoundingClientRect();
-
-    // Mouse position relative to the canvas, not the viewport
     const mouseXInCanvas = e.clientX - canvasRect.left;
     const mouseYInCanvas = e.clientY - canvasRect.top;
-
-    // Node's current top-left relative to canvas is server.position.x/y
     
     setDraggingNodeInfo({
       id: serverId,
-      initialMouseX: mouseXInCanvas, // Store mouse position relative to canvas
+      initialMouseX: mouseXInCanvas,
       initialMouseY: mouseYInCanvas,
       initialNodeX: server.position.x,
       initialNodeY: server.position.y,
@@ -337,10 +327,9 @@ const TopologyPage: NextPage = () => {
     let newY = draggingNodeInfo.initialNodeY + dy;
     
     const serverNodeEl = nodeRefs.current.get(`server-${draggingNodeInfo.id}`);
-    const nodeWidth = serverNodeEl?.offsetWidth || 256; // Default width if not found
-    const nodeHeight = serverNodeEl?.offsetHeight || 100; // Default height
+    const nodeWidth = serverNodeEl?.offsetWidth || 256;
+    const nodeHeight = serverNodeEl?.offsetHeight || 100;
 
-    // Basic boundary collision with canvas
     newX = Math.max(0, Math.min(newX, canvasRef.current.scrollWidth - nodeWidth));
     newY = Math.max(0, Math.min(newY, canvasRef.current.scrollHeight - nodeHeight));
 
@@ -422,7 +411,7 @@ const TopologyPage: NextPage = () => {
 
           {isLoadingData && !isLoadingApiConfig && (
             <div className="flex-grow flex justify-center items-center py-10">
-              <Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-4 text-lg">加载拓扑数据中...</p>
+              <Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-4 text-lg">加载拓扑数据...</p>
             </div>
           )}
 
@@ -564,4 +553,4 @@ const TopologyPage: NextPage = () => {
 
 export default TopologyPage;
 
-        
+    
