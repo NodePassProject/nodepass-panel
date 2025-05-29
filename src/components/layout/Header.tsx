@@ -41,7 +41,7 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
       title: '活动连接已切换',
       description: `已连接到 “${newActiveConf?.name}”。`,
     });
-    router.push('/'); // Navigate to home to reflect changes, e.g., instance list
+    // router.push('/'); // Temporarily commented out to diagnose stale data issue
   };
 
   return (
