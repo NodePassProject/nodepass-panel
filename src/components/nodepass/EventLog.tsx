@@ -74,7 +74,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
           case 'update':
           case 'delete':
             frontendEventType = serverEventPayload.type;
-            frontendEventData = instanceDetailsPayload || serverEventPayload.data || {};
+            frontendEventData = instanceDetailsPayload || serverEventPayload.data || {}; // Prefer instanceDetails if present
             break;
           case 'log':
             frontendEventType = 'log';
@@ -87,7 +87,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
             frontendEventType = 'shutdown';
             frontendEventData = "主控服务即将关闭。事件流已停止。";
             if (abortControllerRef.current) {
-              abortControllerRef.current.abort(); // Abort the fetch if server signals shutdown
+              abortControllerRef.current.abort();
             }
             break;
           default:
@@ -102,8 +102,8 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
         
         const newEventToLog: InstanceEvent = {
           type: frontendEventType,
-          data: frontendEventData,
-          instanceDetails: instanceDetailsPayload,
+          data: frontendEventData, // This is the primary data (string for log, object for instance events)
+          instanceDetails: instanceDetailsPayload, // This specifically holds instance details
           level: parsedLevel,
           timestamp: serverEventPayload.time || new Date().toISOString(),
         };
@@ -113,7 +113,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
         const errorEventToLog: InstanceEvent = { type: 'log', data: `解析事件错误 (fetch): ${eventDataLine}`, timestamp: new Date().toISOString() };
         setEvents((prevEvents) => [errorEventToLog, ...prevEvents.slice(0, 199)]);
       }
-    } else if (eventDataLine) {
+    } else if (eventDataLine) { // Generic message handling (not event: instance)
       const genericEvent: InstanceEvent = {
         type: 'log', 
         data: `通用消息 (fetch): ${eventDataLine}`,
@@ -123,9 +123,10 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
     }
   }, []);
 
+
   const connectWithFetch = useCallback(async () => {
     if (!apiId || !apiRoot || !apiToken || !apiName) {
-      setEvents([{ type: 'log', data: `API 配置无效，事件流禁用。`, timestamp: new Date().toISOString() }]);
+      setEvents(prev => [{ type: 'log', data: `API 配置无效，事件流禁用。`, timestamp: new Date().toISOString() }, ...prev.filter(e => typeof e.data === 'string' ? !e.data.includes('API 配置无效') : true)]);
       setIsConnected(false);
       setIsConnecting(false);
       return;
@@ -175,7 +176,6 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       while (true) {
         const { value, done } = await reader.read();
         if (signal.aborted) { 
-          console.log('SSE 连接 (fetch) 已被客户端中止。');
           setEvents(prev => [{ type: 'log', data: `SSE 连接 (fetch) 已中止。`, timestamp: new Date().toISOString() }, ...prev]);
           setIsConnected(false);
           setIsConnecting(false);
@@ -191,8 +191,9 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
         }
 
         buffer += decoder.decode(value, { stream: true });
-        const messageBlocks = buffer.split('\n\n');
-        buffer = messageBlocks.pop() || ''; 
+        
+        const messageBlocks = buffer.split('\n\n'); // SSE messages are separated by double newlines
+        buffer = messageBlocks.pop() || ''; // Keep the last incomplete message in buffer
 
         for (const block of messageBlocks) {
           if (block.trim() !== '') {
@@ -207,19 +208,18 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
 
       if (signal.aborted) {
         uiErrorMessage = `SSE 连接 (fetch) 已中止 (由客户端发起)。`;
-        console.log(uiErrorMessage);
       } else {
         let reasonMessage = `原因: ${error.message || '未知网络错误'}.`;
         if (error.message?.toLowerCase().includes('failed to fetch') || error.message?.toLowerCase().includes('network error')) {
-          reasonMessage += ' 这通常是由于初始连接失败 (例如服务器CORS策略未允许此来源, 服务器不可达, 或DNS问题)。请检查目标服务器的CORS配置和网络连通性。';
+          reasonMessage += ' 这通常是由于目标服务器的CORS策略未允许此来源, 服务器不可达, 或DNS问题。请检查目标服务器的CORS配置和网络连通性。';
           uiErrorMessage = `无法建立 SSE 连接 (fetch) 到 ${eventsUrl}. ${reasonMessage} 查看服务器日志了解详情。5秒后尝试重连...`;
         } else {
            uiErrorMessage = `SSE 连接 (fetch) 发生错误. ${reasonMessage} 5秒后尝试重连...`;
         }
-        console.error(`EventLog: ${uiErrorMessage}`, error); // Log the detailed error
         if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = setTimeout(() => connectWithFetch(), 5000);
       }
+      console.error(`EventLog: ${uiErrorMessage}`, error); // Log the detailed error
       setEvents(prev => [{ type: 'log', data: uiErrorMessage, timestamp: new Date().toISOString() }, ...prev.slice(0,199)]);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -237,7 +237,6 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
-        // Log that the abort was intentional on unmount
         setEvents(prev => [{ type: 'log', data: `事件流 (fetch) 连接因组件卸载已断开。`, timestamp: new Date().toISOString() }, ...prev.slice(0,199)]);
       }
       if (reconnectTimeoutRef.current) {
@@ -247,7 +246,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
       setIsConnecting(false);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiId, apiRoot, apiToken, connectWithFetch]); // connectWithFetch is a dependency
+  }, [apiId, apiRoot, apiToken, connectWithFetch]);
 
   const getBadgeTextAndVariant = (type: InstanceEvent['type']): { text: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' | 'accent' } => {
     switch (type) {
@@ -265,6 +264,7 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
   const isExpandable = (event: InstanceEvent): boolean => {
     if (event.instanceDetails) return true;
     if (event.type === 'log' && typeof event.data === 'string' && event.data.length > 100) return true; 
+    // Check if data is an object and not null, used for non-instanceDetails events (like initial/create/etc. if instanceDetails is missing)
     if (['initial', 'create', 'update', 'delete'].includes(event.type) && typeof event.data === 'object' && event.data !== null && Object.keys(event.data).length > 0 && !event.instanceDetails) return true;
     return false;
   };
@@ -299,91 +299,94 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
   return (
     <Card className="shadow-lg mt-6">
       <CardHeader>
-        <CardTitle className="flex items-center text-xl">
-          <Rss className="mr-2 h-5 w-5 text-primary" />
-          实时事件日志
-        </CardTitle>
-        <CardDescription>
-          来自 NodePass 实例的实时更新 (API: {apiName || 'N/A'})。
-          状态: <span className={`font-semibold ${isConnected ? 'text-green-500' : isConnecting ? 'text-yellow-500' : 'text-red-500'}`}>
-            {statusText}
-          </span>
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="flex items-center gap-2 mb-4">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Filter className="mr-2 h-4 w-4" />
-                事件类型 ({selectedEventTypes.size > 0 ? selectedEventTypes.size : '全部'})
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56">
-              <DropdownMenuLabel>筛选事件类型</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {ALL_EVENT_TYPES.map((type) => (
-                <DropdownMenuCheckboxItem
-                  key={type}
-                  checked={selectedEventTypes.has(type)}
-                  onCheckedChange={(checked) => {
-                    setSelectedEventTypes((prev) => {
-                      const next = new Set(prev);
-                      if (checked) next.add(type);
-                      else next.delete(type);
-                      return next;
-                    });
-                  }}
-                >
-                  {getBadgeTextAndVariant(type).text}
-                </DropdownMenuCheckboxItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+        <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
+          <div className="flex-grow">
+            <CardTitle className="flex items-center text-xl">
+              <Rss className="mr-2 h-5 w-5 text-primary" />
+              实时事件日志
+            </CardTitle>
+            <CardDescription>
+              来自 NodePass 实例的实时更新 (API: {apiName || 'N/A'})。
+              状态: <span className={`font-semibold ${isConnected ? 'text-green-500' : isConnecting ? 'text-yellow-500' : 'text-red-500'}`}>
+                {statusText}
+              </span>
+            </CardDescription>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Filter className="mr-2 h-4 w-4" />
+                  事件类型 ({selectedEventTypes.size > 0 ? selectedEventTypes.size : '全部'})
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56">
+                <DropdownMenuLabel>筛选事件类型</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {ALL_EVENT_TYPES.map((type) => (
+                  <DropdownMenuCheckboxItem
+                    key={type}
+                    checked={selectedEventTypes.has(type)}
+                    onCheckedChange={(checked) => {
+                      setSelectedEventTypes((prev) => {
+                        const next = new Set(prev);
+                        if (checked) next.add(type);
+                        else next.delete(type);
+                        return next;
+                      });
+                    }}
+                  >
+                    {getBadgeTextAndVariant(type).text}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Filter className="mr-2 h-4 w-4" />
-                日志级别 ({selectedLogLevels.size > 0 ? selectedLogLevels.size : '全部'})
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56">
-              <DropdownMenuLabel>筛选日志级别</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {ALL_LOG_LEVELS.map((level) => (
-                <DropdownMenuCheckboxItem
-                  key={level}
-                  checked={selectedLogLevels.has(level)}
-                  onCheckedChange={(checked) => {
-                    setSelectedLogLevels((prev) => {
-                      const next = new Set(prev);
-                      if (checked) next.add(level);
-                      else next.delete(level);
-                      return next;
-                    });
-                  }}
-                >
-                  {level}
-                </DropdownMenuCheckboxItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Filter className="mr-2 h-4 w-4" />
+                  日志级别 ({selectedLogLevels.size > 0 ? selectedLogLevels.size : '全部'})
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56">
+                <DropdownMenuLabel>筛选日志级别</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {ALL_LOG_LEVELS.map((level) => (
+                  <DropdownMenuCheckboxItem
+                    key={level}
+                    checked={selectedLogLevels.has(level)}
+                    onCheckedChange={(checked) => {
+                      setSelectedLogLevels((prev) => {
+                        const next = new Set(prev);
+                        if (checked) next.add(level);
+                        else next.delete(level);
+                        return next;
+                      });
+                    }}
+                  >
+                    {level}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-          {(selectedEventTypes.size > 0 || selectedLogLevels.size > 0) && (
-            <Button variant="ghost" size="sm" onClick={handleClearFilters}>
-              <XCircle className="mr-2 h-4 w-4" />
-              清除筛选
-            </Button>
-          )}
+            {(selectedEventTypes.size > 0 || selectedLogLevels.size > 0) && (
+              <Button variant="ghost" size="sm" onClick={handleClearFilters}>
+                <XCircle className="mr-2 h-4 w-4" />
+                清除筛选
+              </Button>
+            )}
+          </div>
         </div>
-
+      </CardHeader>
+      <CardContent> {/* CardContent now only contains the ScrollArea */}
         <ScrollArea className="h-80 w-full rounded-md border p-3 bg-muted/20 text-xs" ref={scrollAreaRef}>
           {filteredEvents.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">无匹配事件。</p>}
           {filteredEvents.map((event, index) => {
             const isExpanded = expandedIndex === index;
             const { text: badgeText, variant: badgeVariant } = getBadgeTextAndVariant(event.type);
-            const instance = event.instanceDetails;
+            const instance = event.instanceDetails; // Use instanceDetails for structured instance data
             const canExpand = isExpandable(event);
 
             return (
@@ -419,7 +422,6 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
                   <div className="flex-grow min-w-0"> 
                     {event.type !== 'log' && instance ? (
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 leading-tight">
-                        <span className="font-mono text-foreground/90">ID: {instance.id.substring(0, 8)}...</span>
                         <Badge
                           variant={instance.type === 'server' ? 'default' : 'accent'}
                           className="items-center whitespace-nowrap text-xs shrink-0"
@@ -427,10 +429,11 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
                           {instance.type === 'server' ? <Server size={12} className="mr-1" /> : <Smartphone size={12} className="mr-1" />}
                           {instance.type === 'server' ? '服务器' : '客户端'}
                         </Badge>
+                        <span className="font-mono text-foreground/90">ID: {instance.id.substring(0, 8)}...</span>
                         <InstanceStatusBadge status={instance.status} />
                         <span className="font-mono truncate text-foreground/70" title={instance.url}>{instance.url.length > 30 ? instance.url.substring(0, 27) + '...' : instance.url}</span>
                       </div>
-                    ) : (
+                    ) : ( // For log events or if instanceDetails is not present
                       <p className="font-mono break-words whitespace-pre-wrap text-foreground/90 leading-relaxed">
                         {typeof event.data === 'string' && (isExpanded || !canExpand || event.data.length <= 70) ? event.data : `${String(event.data).substring(0, 70)}...`}
                       </p>
@@ -442,15 +445,15 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
                 </div>
                 {isExpanded && canExpand && (
                   <div className="mt-2 ml-8 pl-4 border-l-2 border-muted/50 py-2 bg-background/30 rounded-r-md">
-                    {instance ? (
+                    {instance ? ( // If instanceDetails exists, show it as JSON
                       <pre className="text-xs p-2 rounded-md overflow-x-auto bg-muted/40 whitespace-pre-wrap break-all">
                         {JSON.stringify(instance, null, 2)}
                       </pre>
-                    ) : event.type === 'log' && typeof event.data === 'string' ? (
+                    ) : event.type === 'log' && typeof event.data === 'string' ? ( // For log events, show full string data if expandable
                       <p className="font-mono break-all whitespace-pre-wrap text-foreground/90 leading-relaxed text-xs">
                         {event.data}
                       </p>
-                    ) : typeof event.data === 'object' && event.data !== null && Object.keys(event.data).length > 0 ? (
+                    ) : typeof event.data === 'object' && event.data !== null && Object.keys(event.data).length > 0 ? ( // Fallback for other object data
                        <pre className="text-xs p-2 rounded-md overflow-x-auto bg-muted/40 whitespace-pre-wrap break-all">
                         {JSON.stringify(event.data, null, 2)}
                       </pre>
@@ -468,4 +471,3 @@ export function EventLog({ apiId, apiRoot, apiToken, apiName }: EventLogProps) {
   );
 }
 
-    
