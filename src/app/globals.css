@@ -20,27 +20,39 @@ h2 {
 
 
 .card-hover-shadow {
-  box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.1);
+  transition: box-shadow 0.3s ease-in-out;
+  box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.card-hover-shadow:hover {
+  box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.12);
 }
 
 .dark .card-hover-shadow {
-  box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.3); /* Darker shadow for dark mode */
+  box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.2); /* Darker base shadow for dark mode */
 }
+
+.dark .card-hover-shadow:hover {
+  box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.3); /* Darker hover shadow for dark mode */
+}
+
 
 .text-flow-effect {
   background: linear-gradient(
     90deg,
     hsl(var(--primary)),      /* Start primary */
     hsl(var(--accent)),       /* Mid cyan */
-    hsl(var(--primary-foreground)), /* Bright peak (e.g., white-ish from theme) */
-    hsl(var(--accent)),       /* Mid cyan again */
-    hsl(var(--primary))       /* End primary */
+    #FF6B6B,                  /* Coral */
+    #FFD166,                  /* Sunny Yellow */
+    #06D6A0,                  /* Bright Mint Green */
+    #118AB2,                  /* Deep Cerulean */
+    hsl(var(--primary))       /* End primary again to loop smoothly */
   );
-  background-size: 200% auto; /* Gradient is twice as wide as the text */
+  background-size: 300% auto; /* Gradient is thrice as wide as the text to allow for more color travel */
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: textFlowAnimation 3s linear infinite;
+  animation: textFlowAnimation 10s linear infinite; /* Increased duration for slower speed */
   display: inline-block; /* Important for h1 */
 }
 
@@ -56,7 +68,7 @@ h2 {
 
 @layer base {
   :root {
-    --background: 0 0% 100%; /* White */
+    --background: 0 0% 100%; /* #FFFFFF White */
     --foreground: 0 0% 13.7%; /* #212121 Black for text */
     
     --card: 0 0% 100%; /* White */
@@ -80,8 +92,8 @@ h2 {
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
     
-    --border: 0 0% 85%; /* Light gray border */
-    --input: 0 0% 89.8%; /* Slightly darker gray for input borders */
+    --border: 0 0% 89.8%; /* #E5E5E5 Slightly darker light gray for borders */
+    --input: 0 0% 89.8%; /* Match border for input */
     --ring: 211 100% 50%; /* #007BFF Ring color to match new primary */
     
     --chart-1: 12 76% 61%;
@@ -96,22 +108,22 @@ h2 {
   }
 
   .dark {
-    --background: 0 0% 13.7%; /* #212121 Black */
+    --background: 0 0% 8%; /* #141414 - Deeper black */
     --foreground: 0 0% 95.7%; /* #F4F4F4 Light Gray for text */
     
-    --card: 0 0% 18%; /* Darker card, visibly lighter than new background */
+    --card: 0 0% 12%; /* #1F1F1F - Darker card, visibly lighter than new background */
     --card-foreground: 0 0% 95.7%; /* #F4F4F4 */
     
-    --popover: 0 0% 18%; /* Match card background */
+    --popover: 0 0% 12%; /* Match card background */
     --popover-foreground: 0 0% 95.7%; /* #F4F4F4 */
     
     --primary: 211 100% 50%; /* #007BFF 主蓝色 */
     --primary-foreground: 0 0% 100%; /* White */
     
-    --secondary: 0 0% 22%; /* Darker secondary, slightly lighter than background */
+    --secondary: 0 0% 15%; /* #262626 - Darker secondary */
     --secondary-foreground: 0 0% 95.7%; /* #F4F4F4 */
     
-    --muted: 0 0% 10%; /* Very dark muted, for subtle elements */
+    --muted: 0 0% 10%; /* #1A1A1A - Very dark muted, for subtle elements */
     --muted-foreground: 0 0% 65%; /* Adjusted for readability on darker muted */
     
     --accent: 187 100% 42%; /* Vibrant Cyan */
@@ -120,8 +132,8 @@ h2 {
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
     
-    --border: 0 0% 25%; /* Darker border, visible on dark surfaces */
-    --input: 0 0% 20%; /* Darker input background */
+    --border: 0 0% 20%; /* #333333 - Darker border, visible on dark surfaces */
+    --input: 0 0% 18%; /* #2E2E2E - Darker input background */
     --ring: 211 100% 50%; /* #007BFF Ring color to match primary */
     
     --chart-1: 220 70% 50%;
