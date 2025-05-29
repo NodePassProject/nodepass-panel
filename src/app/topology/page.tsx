@@ -3,7 +3,7 @@
 
 import type { NextPage } from 'next';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { useApiConfig, type NamedApiConfig } from '@/hooks/use-api-key';
+import { useApiConfig } from '@/hooks/use-api-key';
 import { nodePassApi } from '@/lib/api';
 import type { Instance } from '@/types/nodepass';
 import { AlertTriangle, Loader2, RefreshCw, Network, ServerIcon, SmartphoneIcon, Move, Link2, Eye } from 'lucide-react';
@@ -22,7 +22,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from '@/components/ui/badge';
 
 
 interface InstanceWithApiDetails extends Instance {
@@ -56,7 +55,7 @@ interface ClientNode extends NodeBase {
   type: 'client';
   clientConnectsToServerAddress: string | null;
   localTargetAddress: string | null;
-  connectedToServerId: string | null; 
+  connectedToServerId: string | null;
 }
 
 type DraggableNode = ServerNode | ClientNode;
@@ -67,7 +66,7 @@ interface ConnectionLine {
   y1: number;
   x2: number;
   y2: number;
-  type: 'direct'; 
+  type: 'direct';
 }
 
 interface DraggingNodeInfo {
@@ -135,11 +134,11 @@ function splitHostPort(address: string | null): { host: string | null; port: str
 }
 
 
-const NODE_WIDTH = 280;
-const NODE_HEIGHT_SERVER = 120;
-const NODE_HEIGHT_CLIENT = 100;
-const GRAPH_CLIENT_OFFSET_X = 350; 
-const GRAPH_CLIENT_SPACING_Y = 30;
+const NODE_WIDTH = 280; // Adjusted for a slightly wider card
+const NODE_HEIGHT_SERVER = 130; // Increased height for server node
+const NODE_HEIGHT_CLIENT = 110; // Increased height for client node
+const GRAPH_CLIENT_OFFSET_X = NODE_WIDTH + 70; // Space between server and first client
+const GRAPH_CLIENT_SPACING_Y = 30; // Vertical space between clients
 
 
 const TopologyPage: NextPage = () => {
@@ -148,7 +147,7 @@ const TopologyPage: NextPage = () => {
 
   const [allServerInstances, setAllServerInstances] = useState<ServerNode[]>([]);
   const [allClientInstances, setAllClientInstances] = useState<ClientNode[]>([]);
-  
+
   const [viewMode, setViewMode] = useState<'table' | 'graph'>('table');
   const [selectedServerForGraph, setSelectedServerForGraph] = useState<ServerNode | null>(null);
   const [clientsForSelectedServer, setClientsForSelectedServer] = useState<ClientNode[]>([]);
@@ -177,7 +176,7 @@ const TopologyPage: NextPage = () => {
           status: inst.status,
           apiId: inst.apiId,
           apiName: inst.apiName,
-          position: { x: 50, y: 50 }, 
+          position: { x: 50, y: 50 },
           serverListeningAddress: parseTunnelAddr(inst.url),
           serverForwardsToAddress: parseTargetAddr(inst.url),
           originalInstance: inst,
@@ -190,10 +189,10 @@ const TopologyPage: NextPage = () => {
           status: inst.status,
           apiId: inst.apiId,
           apiName: inst.apiName,
-          position: { x: 50, y: 50 }, 
+          position: { x: 50, y: 50 },
           clientConnectsToServerAddress: parseTunnelAddr(inst.url),
           localTargetAddress: parseTargetAddr(inst.url),
-          connectedToServerId: null, 
+          connectedToServerId: null,
           originalInstance: inst,
         });
       }
@@ -218,7 +217,7 @@ const TopologyPage: NextPage = () => {
         }
       }
     });
-    
+
     setAllServerInstances(sNodes);
     setAllClientInstances(cNodes);
     setLastRefreshed(new Date());
@@ -246,7 +245,7 @@ const TopologyPage: NextPage = () => {
         currentErrors.set(config.id, `API配置"${config.name}"无效。`);
         continue;
       }
-      
+
       try {
         console.log(`拓扑: 从API ${config.name} (ID: ${config.id}) 加载实例，URL: ${apiRootVal}`);
         const data = await nodePassApi.getInstances(apiRootVal, tokenVal);
@@ -260,7 +259,7 @@ const TopologyPage: NextPage = () => {
     if (combinedInstances.length > 0) {
       processAllInstanceData(combinedInstances);
     } else {
-      setAllServerInstances([]); 
+      setAllServerInstances([]);
       setAllClientInstances([]);
     }
     setIsLoadingData(false);
@@ -282,21 +281,24 @@ const TopologyPage: NextPage = () => {
 
     const serverEl = nodeRefs.current.get(`server-${serverNode.id}`);
     if (!serverEl) {
-        console.warn(`服务器元素 ${serverNode.id} 未找到。`);
-        setLines([]);
-        return;
+      console.warn(`服务器元素 ${serverNode.id} 未找到。`);
+      setLines([]);
+      return;
     }
-    
+
+    // Server's right-middle edge as the starting point for lines
+    const x1_state = serverNode.position.x + NODE_WIDTH;
+    const y1_state = serverNode.position.y + NODE_HEIGHT_SERVER / 2;
+
     connectedClients.forEach(client => {
       const clientEl = nodeRefs.current.get(`client-${client.id}`);
       if (!clientEl) {
         console.warn(`客户端元素 ${client.id} 未找到。`);
         return;
       }
-      
-      const x1_state = serverNode.position.x + NODE_WIDTH / 2;
-      const y1_state = serverNode.position.y + NODE_HEIGHT_SERVER / 2;
-      const x2_state = client.position.x + NODE_WIDTH / 2;
+
+      // Client's left-middle edge as the ending point for lines
+      const x2_state = client.position.x;
       const y2_state = client.position.y + NODE_HEIGHT_CLIENT / 2;
 
       newLines.push({
@@ -307,22 +309,22 @@ const TopologyPage: NextPage = () => {
       });
     });
     setLines(newLines);
-  }, [selectedServerForGraph, clientsForSelectedServer, viewMode, nodeRefs]);
+  }, [selectedServerForGraph, clientsForSelectedServer, viewMode]);
 
 
   useEffect(() => {
     if (viewMode === 'graph' && selectedServerForGraph) {
       const timer = setTimeout(() => {
         calculateGraphLayoutAndLines();
-      }, 50); 
-      
+      }, 50);
+
       window.addEventListener('resize', calculateGraphLayoutAndLines);
       return () => {
         clearTimeout(timer);
         window.removeEventListener('resize', calculateGraphLayoutAndLines);
       };
     } else {
-      setLines([]); 
+      setLines([]);
     }
   }, [viewMode, selectedServerForGraph, clientsForSelectedServer, calculateGraphLayoutAndLines, draggingNodeInfo]);
 
@@ -331,12 +333,12 @@ const TopologyPage: NextPage = () => {
       .filter(c => c.connectedToServerId === server.id)
       .map((client, index) => ({
         ...client,
-        position: { 
-          x: 50 + GRAPH_CLIENT_OFFSET_X, 
-          y: 50 + (index * (NODE_HEIGHT_CLIENT + GRAPH_CLIENT_SPACING_Y)) 
+        position: {
+          x: 50 + GRAPH_CLIENT_OFFSET_X,
+          y: 50 + (index * (NODE_HEIGHT_CLIENT + GRAPH_CLIENT_SPACING_Y))
         }
       }));
-    
+
     const serverInitialY = 50 + (connectedClients.length > 0 ? (connectedClients.length -1) * (NODE_HEIGHT_CLIENT + GRAPH_CLIENT_SPACING_Y) / 2 : 0) - (NODE_HEIGHT_SERVER / 2) + (NODE_HEIGHT_CLIENT /2);
 
     setSelectedServerForGraph({...server, position: { x: 50, y: Math.max(50, serverInitialY) }});
@@ -386,13 +388,12 @@ const TopologyPage: NextPage = () => {
     const mouseXInCanvas = e.clientX - canvasRect.left + canvasRef.current.scrollLeft;
     const mouseYInCanvas = e.clientY - canvasRect.top + canvasRef.current.scrollTop;
 
-
     const dx = mouseXInCanvas - draggingNodeInfo.initialMouseX;
     const dy = mouseYInCanvas - draggingNodeInfo.initialMouseY;
 
     let newX = draggingNodeInfo.initialNodeX + dx;
     let newY = draggingNodeInfo.initialNodeY + dy;
-    
+
     const nodeEl = nodeRefs.current.get(`${draggingNodeInfo.type}-${draggingNodeInfo.id}`);
     const nodeWidth = nodeEl?.offsetWidth || NODE_WIDTH;
     const nodeHeight = nodeEl?.offsetHeight || (draggingNodeInfo.type === 'server' ? NODE_HEIGHT_SERVER : NODE_HEIGHT_CLIENT);
@@ -400,12 +401,11 @@ const TopologyPage: NextPage = () => {
     newX = Math.max(0, Math.min(newX, canvasRef.current.scrollWidth - nodeWidth));
     newY = Math.max(0, Math.min(newY, canvasRef.current.scrollHeight - nodeHeight));
 
-
     if (draggingNodeInfo.type === 'server' && selectedServerForGraph?.id === draggingNodeInfo.id) {
       setSelectedServerForGraph(prev => prev ? { ...prev, position: { x: newX, y: newY } } : null);
     } else if (draggingNodeInfo.type === 'client') {
-      setClientsForSelectedServer(prevClients => 
-        prevClients.map(c => 
+      setClientsForSelectedServer(prevClients =>
+        prevClients.map(c =>
           c.id === draggingNodeInfo.id ? { ...c, position: { x: newX, y: newY } } : c
         )
       );
@@ -440,7 +440,7 @@ const TopologyPage: NextPage = () => {
         key={`${node.type}-${node.id}`}
         ref={el => nodeRefs.current.set(`${node.type}-${node.id}`, el)}
         className={cn(
-          "absolute shadow-lg hover:shadow-xl transition-all cursor-grab p-3 rounded-lg flex flex-col",
+          "absolute shadow-xl hover:shadow-2xl transition-all cursor-grab p-3 rounded-lg flex flex-col border-2",
           bgColor,
         )}
         style={{
@@ -480,9 +480,6 @@ const TopologyPage: NextPage = () => {
            {isServer && (node as ServerNode).serverForwardsToAddress && (
             <p className="truncate" title={(node as ServerNode).serverForwardsToAddress!}>转发至: <span className="font-mono">{(node as ServerNode).serverForwardsToAddress}</span></p>
           )}
-          {!isServer && (node as ClientNode).clientConnectsToServerAddress && (
-            <p className="truncate" title={(node as ClientNode).clientConnectsToServerAddress!}>连接至: <span className="font-mono">{(node as ClientNode).clientConnectsToServerAddress}</span></p>
-          )}
           {!isServer && (node as ClientNode).localTargetAddress && (
             <p className="truncate text-green-600 dark:text-green-400" title={(node as ClientNode).localTargetAddress!}>
               <Link2 className="inline-block h-3 w-3 mr-1"/>
@@ -496,7 +493,7 @@ const TopologyPage: NextPage = () => {
 
 
   if (isLoadingApiConfig) {
-    return <AppLayout><div className="text-center py-10"><Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" /><p>加载 API 配置...</p></div></AppLayout>;
+    return <AppLayout><div className="text-center py-10"><Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" /><p>加载API配置...</p></div></AppLayout>;
   }
 
   const globalError = fetchErrors.get("global");
@@ -556,7 +553,7 @@ const TopologyPage: NextPage = () => {
               <CardContent><p className="text-muted-foreground">{apiConfigsList.length > 0 ? "未找到任何服务器实例。" : "请先配置API连接。"}</p></CardContent>
             </Card>
           )}
-          
+
           {viewMode === 'table' && !isLoadingData && allServerInstances.length > 0 && (
             <div className="border rounded-lg shadow-md overflow-x-auto">
               <Table>
@@ -602,11 +599,11 @@ const TopologyPage: NextPage = () => {
           )}
 
           {viewMode === 'graph' && selectedServerForGraph && (
-            <div 
+            <div
               ref={canvasRef}
               id="topology-canvas"
-              className="relative flex-grow border rounded-lg p-4 bg-muted/5 overflow-auto min-h-[calc(100vh-22rem)] w-full" 
-              style={{ touchAction: 'none' }} 
+              className="relative flex-grow border-2 border-dashed border-border/50 rounded-lg p-4 bg-muted/10 overflow-auto min-h-[calc(100vh-22rem)] w-full shadow-inner"
+              style={{ touchAction: 'none' }}
             >
               <svg ref={svgRef} className="absolute inset-0 w-full h-full pointer-events-none z-0">
                 <defs>
@@ -621,16 +618,18 @@ const TopologyPage: NextPage = () => {
                     y1={line.y1}
                     x2={line.x2}
                     y2={line.y2}
-                    stroke={'hsl(var(--primary))'} 
-                    strokeWidth="1.5"
+                    stroke={'hsl(var(--primary))'}
+                    strokeWidth="2" // Thicker line
+                    strokeLinecap="round"
                     markerEnd={"url(#arrowhead-direct)"}
+                    className="opacity-75 group-hover:opacity-100 transition-opacity"
                   />
                 ))}
               </svg>
-              
+
               {renderGraphNode(selectedServerForGraph)}
               {clientsForSelectedServer.map(client => renderGraphNode(client))}
-              
+
               {clientsForSelectedServer.length === 0 && (
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-muted-foreground p-4 bg-background/80 rounded-md shadow">
                     此服务器实例当前没有连接的客户端。
@@ -643,8 +642,8 @@ const TopologyPage: NextPage = () => {
             <div className="flex items-center font-semibold mb-2"><Network className="h-4 w-4 mr-2 text-primary shrink-0" />拓扑说明</div>
             <ul className="list-disc list-inside space-y-1.5 pl-1">
               <li>默认显示所有API源的服务器实例列表。点击 "查看拓扑" 可切换到图形视图，显示选定服务器及其连接的客户端。</li>
-              <li>在图形视图中，服务器和客户端节点均可拖动以调整布局。</li>
-              <li>连接线从 <strong className="text-primary">服务器</strong> 指向 <strong className="text-accent">客户端</strong>，表示客户端通过其 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> 连接到服务器的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> (监听地址)。</li>
+              <li>在图形视图中，服务器和客户端节点均可拖动以调整布局。连接线将从服务器右侧指向客户端左侧。</li>
+              <li>连接关系基于客户端的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> (其连接的服务器地址)与服务器的 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;tunnel_addr&gt;</code> (其监听地址)匹配。</li>
               <li>客户端“落地”地址指其本地转发目标 <code className="bg-muted px-1 py-0.5 rounded text-foreground">&lt;target_addr&gt;</code>。</li>
             </ul>
           </div>
@@ -655,5 +654,3 @@ const TopologyPage: NextPage = () => {
 };
 
 export default TopologyPage;
-
-    
