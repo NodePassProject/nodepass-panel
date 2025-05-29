@@ -6,7 +6,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useApiConfig } from '@/hooks/use-api-key';
 import { nodePassApi } from '@/lib/api';
 import type { Instance } from '@/types/nodepass';
-import { AlertTriangle, Loader2, RefreshCw, Network, ServerIcon, SmartphoneIcon, Move, Link2, Eye, List } from 'lucide-react';
+import { AlertTriangle, Loader2, RefreshCw, Network, ServerIcon, SmartphoneIcon, Move, Link2, Eye, List, Maximize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -158,6 +158,7 @@ const TopologyPage: NextPage = () => {
   const canvasRef = useRef<HTMLDivElement>(null);
 
   const [draggingNodeInfo, setDraggingNodeInfo] = useState<DraggingNodeInfo | null>(null);
+  const didDragRef = useRef<boolean>(false);
 
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [selectedInstanceForDetails, setSelectedInstanceForDetails] = useState<Instance | null>(null);
@@ -321,9 +322,7 @@ const TopologyPage: NextPage = () => {
 
   useEffect(() => {
     if (viewMode === 'graph' && selectedServerForGraph) {
-      // Initial calculation, then updates on drag
       calculateGraphLayoutAndLines();
-      // Re-calculate on window resize
       window.addEventListener('resize', calculateGraphLayoutAndLines);
       return () => {
         window.removeEventListener('resize', calculateGraphLayoutAndLines);
@@ -331,25 +330,24 @@ const TopologyPage: NextPage = () => {
     } else {
       setLines([]);
     }
-  }, [viewMode, selectedServerForGraph, clientsForSelectedServer, calculateGraphLayoutAndLines, draggingNodeInfo]); // Added draggingNodeInfo as dependency
+  }, [viewMode, selectedServerForGraph, clientsForSelectedServer, calculateGraphLayoutAndLines, draggingNodeInfo]);
 
   const handleViewServerTopology = (server: ServerNode) => {
     const connectedClients = allClientInstances
       .filter(c => c.connectedToServerId === server.id)
       .map((client, index) => ({
         ...client,
-        position: { // Stack clients vertically to the right of the server
+        position: { 
           x: 50 + GRAPH_CLIENT_OFFSET_X,
           y: 50 + (index * (NODE_HEIGHT_CLIENT + GRAPH_CLIENT_SPACING_Y))
         }
       }));
 
-    // Center the server vertically relative to its clients
     const serverInitialY = connectedClients.length > 0
       ? 50 + ((connectedClients.length - 1) * (NODE_HEIGHT_CLIENT + GRAPH_CLIENT_SPACING_Y) / 2) + (NODE_HEIGHT_CLIENT / 2) - (NODE_HEIGHT_SERVER / 2)
-      : 150; // Default Y if no clients
+      : 150; 
 
-    setSelectedServerForGraph({...server, position: { x: 50, y: Math.max(50, serverInitialY) }}); // Ensure server isn't too high up
+    setSelectedServerForGraph({...server, position: { x: 50, y: Math.max(50, serverInitialY) }});
     setClientsForSelectedServer(connectedClients);
     setViewMode('graph');
   };
@@ -362,8 +360,9 @@ const TopologyPage: NextPage = () => {
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>, nodeId: string, nodeType: 'server' | 'client') => {
+    didDragRef.current = false; // Reset drag flag
     e.preventDefault();
-    e.stopPropagation(); // Prevent parent elements from capturing the event
+    e.stopPropagation(); 
 
     let node: DraggableNode | undefined;
     if (nodeType === 'server' && selectedServerForGraph?.id === nodeId) {
@@ -391,6 +390,7 @@ const TopologyPage: NextPage = () => {
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (!draggingNodeInfo || !canvasRef.current || viewMode !== 'graph') return;
     e.preventDefault();
+    didDragRef.current = true; // Set drag flag if mouse moves
 
     const canvasRect = canvasRef.current.getBoundingClientRect();
     const mouseXInCanvas = e.clientX - canvasRect.left + canvasRef.current.scrollLeft;
@@ -402,7 +402,6 @@ const TopologyPage: NextPage = () => {
     let newX = draggingNodeInfo.initialNodeX + dx;
     let newY = draggingNodeInfo.initialNodeY + dy;
 
-    // Boundary checks
     const nodeEl = nodeRefs.current.get(`${draggingNodeInfo.type}-${draggingNodeInfo.id}`);
     const nodeWidth = nodeEl?.offsetWidth || NODE_WIDTH;
     const nodeHeight = nodeEl?.offsetHeight || (draggingNodeInfo.type === 'server' ? NODE_HEIGHT_SERVER : NODE_HEIGHT_CLIENT);
@@ -419,11 +418,11 @@ const TopologyPage: NextPage = () => {
         )
       );
     }
-    // Line recalculation will be triggered by useEffect dependency on selectedServerForGraph/clientsForSelectedServer
-  }, [draggingNodeInfo, viewMode, selectedServerForGraph]); // Removed clientsForSelectedServer from here to avoid stale closures
+  }, [draggingNodeInfo, viewMode, selectedServerForGraph]);
 
   const handleMouseUp = useCallback(() => {
     setDraggingNodeInfo(null);
+    // didDragRef is reset by the onClick handler
   }, []);
 
   useEffect(() => {
@@ -462,19 +461,25 @@ const TopologyPage: NextPage = () => {
           top: `${node.position.y}px`,
           height: `${nodeHeight}px`,
           width: `${NODE_WIDTH}px`,
-          zIndex: draggingNodeInfo?.id === node.id && draggingNodeInfo?.type === node.type ? 100 : 1, // Ensure dragging node is on top
-          userSelect: 'none', // Prevent text selection during drag
+          zIndex: draggingNodeInfo?.id === node.id && draggingNodeInfo?.type === node.type ? 100 : 1, 
+          userSelect: 'none', 
         }}
         onMouseDown={(e) => handleMouseDown(e, node.id, node.type)}
-        onClick={() => openInstanceDetailsModal(node.originalInstance)} // Click card to open details
+        onClick={() => {
+          if (didDragRef.current) {
+            didDragRef.current = false; 
+            return;
+          }
+          openInstanceDetailsModal(node.originalInstance);
+        }}
       >
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className="flex items-center gap-2 mb-1 flex-shrink-0 cursor-pointer"> {/* Make title area clickable for details */}
+            <div className="flex items-center gap-2 mb-1 flex-shrink-0 cursor-pointer"> 
               <Move className="h-4 w-4 text-muted-foreground hover:text-primary cursor-grab flex-shrink-0" />
               <Icon className={`h-5 w-5 ${isServer ? 'text-primary' : 'text-accent'} flex-shrink-0`} />
               <h3 className="font-semibold text-sm truncate" title={node.apiName}>
-                {node.apiName} {/* Display API Name first */}
+                {node.apiName} 
               </h3>
             </div>
           </TooltipTrigger>
@@ -484,7 +489,7 @@ const TopologyPage: NextPage = () => {
             <p>URL: {node.url}</p>
           </TooltipContent>
         </Tooltip>
-        <div className="text-xs space-y-0.5 text-muted-foreground overflow-y-auto flex-grow"> {/* Allow content to scroll if it overflows */}
+        <div className="text-xs space-y-0.5 text-muted-foreground overflow-y-auto flex-grow"> 
           <div className="flex items-center">
             <InstanceStatusBadge status={node.status} />
             <span className="ml-2 text-xs">(ID: {node.id.substring(0, 8)}...)</span>
@@ -499,6 +504,11 @@ const TopologyPage: NextPage = () => {
              <p className="truncate text-green-600 dark:text-green-400" title={(node as ClientNode).localTargetAddress!}>
               <Link2 className="inline-block h-3 w-3 mr-1"/>
               落地: <span className="font-mono">{(node as ClientNode).localTargetAddress}</span>
+            </p>
+          )}
+           {!isServer && (node as ClientNode).clientConnectsToServerAddress && (
+            <p className="truncate" title={(node as ClientNode).clientConnectsToServerAddress!}>
+              连接至: <span className="font-mono">{(node as ClientNode).clientConnectsToServerAddress}</span>
             </p>
           )}
         </div>
@@ -610,8 +620,8 @@ const TopologyPage: NextPage = () => {
             <div
               ref={canvasRef}
               id="topology-canvas"
-              className="relative flex-grow border-2 border-dashed border-border/50 rounded-lg p-4 bg-muted/10 overflow-auto min-h-[calc(100vh-22rem)] w-full shadow-inner" // Ensure it takes up space
-              style={{ touchAction: 'none' }} // Prevent page scroll on touch devices when dragging
+              className="relative flex-grow border-2 border-dashed border-border/50 rounded-lg p-4 bg-muted/10 overflow-auto min-h-[calc(100vh-22rem)] w-full shadow-inner"
+              style={{ touchAction: 'none' }} 
             >
               <svg ref={svgRef} className="absolute inset-0 w-full h-full pointer-events-none z-0">
                 {lines.map(line => (
@@ -667,3 +677,5 @@ const TopologyPage: NextPage = () => {
 };
 
 export default TopologyPage;
+
+    
