@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useApiConfig, type NamedApiConfig } from '@/hooks/use-api-key';
 import { useToast } from '@/hooks/use-toast';
-// Removed useRouter as window.location.href will be used
+// Removed useRouter as window.location.href will be used for API switch navigation
 
 interface HeaderProps {
   onManageApiConfigs: (configToEdit?: NamedApiConfig | null) => void;
@@ -30,9 +30,8 @@ interface HeaderProps {
 
 export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiConfig }: HeaderProps) {
   const { setTheme, theme } = useTheme();
-  const { apiConfigsList, activeApiConfig, setActiveApiConfigId } = useApiConfig();
+  const { apiConfigsList, activeApiConfig, setActiveApiConfigId, deleteApiConfig } = useApiConfig();
   const { toast } = useToast();
-  // const router = useRouter(); // No longer needed for this specific action
 
   const handleSwitchApiConfig = (id: string) => {
     const newActiveConf = apiConfigsList.find(c => c.id === id);
@@ -41,18 +40,35 @@ export function Header({ onManageApiConfigs, onClearActiveConfig, hasActiveApiCo
       title: '活动连接已切换',
       description: `已连接到 “${newActiveConf?.name}”。`,
     });
-    // router.push('/'); // Re-enable navigation to home page
     window.location.href = '/'; // Force a full page navigation to the root path
   };
 
+  const handleDeleteConfigFromDropdown = (configId: string, configName: string) => {
+    if (activeApiConfig?.id === configId) {
+      toast({
+        title: '操作失败',
+        description: '不能删除当前活动的 API 连接。请先切换到其他连接。',
+        variant: 'destructive',
+      });
+      return;
+    }
+    deleteApiConfig(configId);
+    toast({
+      title: '连接已删除',
+      description: `“${configName}”已被删除。`,
+      variant: 'destructive',
+    });
+  };
+
+
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60" style={{ height: 'var(--header-height)' }}>
       <div className="container flex h-16 items-center px-4 sm:px-6 lg:px-8">
         {/* Left Group: Logo, Title, Active API Name */}
         <div className="flex items-center">
           <Link href="/" className="flex items-center" aria-label="主页">
             <Home className="mr-2 h-6 w-6 text-primary" />
-            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">NodePass 管理器</h1>
+            <h1 className="text-flow-effect text-xl font-bold tracking-tight sm:text-2xl">NodePass 管理器</h1>
           </Link>
            {activeApiConfig && (
             <span className="ml-3 text-xs px-2 py-1 bg-muted text-muted-foreground rounded-full hidden sm:inline-block">
