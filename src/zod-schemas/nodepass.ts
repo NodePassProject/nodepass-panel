@@ -53,13 +53,9 @@ export const updateInstanceSchema = z.object({
   action: z.enum(["start", "stop", "restart"]),
 });
 
-export const optimizeInstanceSchema = z.object({
-  instanceType: z.enum(["client", "server"], { required_error: "Instance type is required." }),
-  performanceCharacteristics: z.string().min(3, "Performance characteristics are required."),
-});
-
-// batchCreateInstancesSchema is removed as the feature is deleted.
-// export const batchCreateInstancesSchema = z.object({
-//   urls: z.string().min(1, "至少需要一个 URL。"),
+// optimizeInstanceSchema is removed as the feature is deleted.
+// export const optimizeInstanceSchema = z.object({
+//   instanceType: z.enum(["client", "server"], { required_error: "Instance type is required." }),
+//   performanceCharacteristics: z.string().min(3, "Performance characteristics are required."),
 // });
 

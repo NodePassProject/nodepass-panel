@@ -13,13 +13,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { AlertTriangle, Eye, Trash2, Wand2, ArrowDown, ArrowUp, Server, Smartphone, Search, Pencil } from 'lucide-react';
+import { AlertTriangle, Eye, Trash2, ArrowDown, ArrowUp, Server, Smartphone, Search, Pencil } from 'lucide-react';
 import type { Instance, UpdateInstanceRequest } from '@/types/nodepass';
 import { InstanceStatusBadge } from './InstanceStatusBadge';
 import { InstanceControls } from './InstanceControls';
 import { DeleteInstanceDialog } from './DeleteInstanceDialog';
 import { InstanceDetailsModal } from './InstanceDetailsModal';
-import { OptimizeInstanceDialog } from './OptimizeInstanceDialog';
+// import { OptimizeInstanceDialog } from './OptimizeInstanceDialog'; // Removed
 import { ModifyInstanceDialog } from './ModifyInstanceDialog';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -48,14 +48,14 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
 
   const [selectedInstanceForDetails, setSelectedInstanceForDetails] = useState<Instance | null>(null);
   const [selectedInstanceForDelete, setSelectedInstanceForDelete] = useState<Instance | null>(null);
-  const [selectedInstanceForOptimize, setSelectedInstanceForOptimize] = useState<Instance | null>(null);
+  // const [selectedInstanceForOptimize, setSelectedInstanceForOptimize] = useState<Instance | null>(null); // Removed
   const [selectedInstanceForModify, setSelectedInstanceForModify] = useState<Instance | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
   const { data: instances, isLoading: isLoadingInstances, error: instancesError } = useQuery<Instance[], Error>({
     queryKey: ['instances', apiId],
     queryFn: () => {
-      if (!apiId || !apiRoot || !apiToken) throw new Error("API configuration is incomplete for fetching instances.");
+      if (!apiId || !apiRoot || !apiToken) throw new Error("API 配置不完整，无法获取实例。");
       console.log(`InstanceList: Fetching instances for API ID: ${apiId}, Root: ${apiRoot}, Token Present: ${!!apiToken}`);
       return nodePassApi.getInstances(apiRoot, apiToken);
     },
@@ -66,7 +66,7 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
 
   const updateInstanceMutation = useMutation({
     mutationFn: ({ instanceId, action }: { instanceId: string, action: UpdateInstanceRequest['action']}) => {
-      if (!apiId || !apiRoot || !apiToken) throw new Error("API configuration is incomplete for updating instance.");
+      if (!apiId || !apiRoot || !apiToken) throw new Error("API 配置不完整，无法更新实例。");
       return nodePassApi.updateInstance(instanceId, { action }, apiRoot, apiToken);
     },
     onSuccess: (data) => {
@@ -87,7 +87,7 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
 
   const deleteInstanceMutation = useMutation({
     mutationFn: (instanceId: string) => {
-      if (!apiId || !apiRoot || !apiToken) throw new Error("API configuration is incomplete for deleting instance.");
+      if (!apiId || !apiRoot || !apiToken) throw new Error("API 配置不完整，无法删除实例。");
       return nodePassApi.deleteInstance(instanceId, apiRoot, apiToken);
     },
     onSuccess: (_, instanceId) => {
@@ -184,7 +184,7 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
                     <TableCell>
                       <Badge 
                         variant={instance.type === 'server' ? 'default' : 'accent'} 
-                        className="items-center whitespace-nowrap"
+                        className="items-center whitespace-nowrap text-xs"
                       >
                         {instance.type === 'server' ? <Server className="h-3 w-3 mr-1" /> : <Smartphone className="h-3 w-3 mr-1" />}
                         {instance.type === 'server' ? '服务器' : '客户端'}
@@ -213,9 +213,11 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedInstanceForModify(instance)} aria-label="修改">
                           <Pencil className="h-4 w-4" />
                         </Button>
+                        {/* Removed Optimize Button
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedInstanceForOptimize(instance)} aria-label="优化">
                           <Wand2 className="h-4 w-4" />
                         </Button>
+                        */}
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setSelectedInstanceForDelete(instance)} aria-label="删除">
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -257,11 +259,11 @@ export function InstanceList({ apiId, apiName, apiRoot, apiToken }: InstanceList
         onConfirmDelete={(id) => deleteInstanceMutation.mutate(id)}
         isLoading={deleteInstanceMutation.isPending}
       />
-      <OptimizeInstanceDialog
+      {/* <OptimizeInstanceDialog
         instance={selectedInstanceForOptimize}
         open={!!selectedInstanceForOptimize}
         onOpenChange={(open) => !open && setSelectedInstanceForOptimize(null)}
-      />
+      /> // Removed */}
       <ModifyInstanceDialog
         instance={selectedInstanceForModify}
         open={!!selectedInstanceForModify}
