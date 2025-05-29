@@ -49,12 +49,12 @@ interface NodeBase {
 interface ServerNode extends NodeBase {
   type: 'server';
   serverListeningAddress: string | null;
-  serverForwardsToAddress: string | null;
+  serverForwardsToAddress: string | null; // Kept for data model, but won't be displayed on card
 }
 
 interface ClientNode extends NodeBase {
   type: 'client';
-  clientConnectsToServerAddress: string | null;
+  clientConnectsToServerAddress: string | null; // Kept for data model, but won't be displayed on card
   localTargetAddress: string | null;
   connectedToServerId: string | null;
 }
@@ -133,10 +133,10 @@ function splitHostPort(address: string | null): { host: string | null; port: str
 
 
 const NODE_WIDTH = 280;
-const NODE_HEIGHT_SERVER = 120;
+const NODE_HEIGHT_SERVER = 120; 
 const NODE_HEIGHT_CLIENT = 100;
-const GRAPH_CLIENT_OFFSET_X = NODE_WIDTH + 70; // Horizontal offset for clients from their server
-const GRAPH_CLIENT_SPACING_Y = 30; // Vertical spacing between clients of the same server
+const GRAPH_CLIENT_OFFSET_X = NODE_WIDTH + 70; 
+const GRAPH_CLIENT_SPACING_Y = 30; 
 
 
 const TopologyPage: NextPage = () => {
@@ -176,7 +176,7 @@ const TopologyPage: NextPage = () => {
           status: inst.status,
           apiId: inst.apiId,
           apiName: inst.apiName,
-          position: { x: 50, y: 50 }, // Initial default position
+          position: { x: 50, y: 50 }, 
           serverListeningAddress: parseTunnelAddr(inst.url),
           serverForwardsToAddress: parseTargetAddr(inst.url),
           originalInstance: inst,
@@ -189,16 +189,16 @@ const TopologyPage: NextPage = () => {
           status: inst.status,
           apiId: inst.apiId,
           apiName: inst.apiName,
-          position: { x: 50 + GRAPH_CLIENT_OFFSET_X, y: 50 }, // Initial default position
+          position: { x: 50 + GRAPH_CLIENT_OFFSET_X, y: 50 }, 
           clientConnectsToServerAddress: parseTunnelAddr(inst.url),
           localTargetAddress: parseTargetAddr(inst.url),
-          connectedToServerId: null, // Will be determined next
+          connectedToServerId: null, 
           originalInstance: inst,
         });
       }
     });
 
-    // Determine client-server connections
+    
     cNodes.forEach(client => {
       const clientConnAddr = client.clientConnectsToServerAddress;
       if (!clientConnAddr) return;
@@ -213,7 +213,7 @@ const TopologyPage: NextPage = () => {
           const isServerHostWildcard = serverHostListensOn === '0.0.0.0' || serverHostListensOn === '::' || !serverHostListensOn;
           if (isServerHostWildcard || clientHostConnectsTo === serverHostListensOn) {
             client.connectedToServerId = server.id;
-            break; // Client connects to the first matching server
+            break; 
           }
         }
       }
@@ -234,7 +234,7 @@ const TopologyPage: NextPage = () => {
         return [];
       }
       let combinedInstances: InstanceWithApiDetails[] = [];
-      // Using Promise.allSettled to fetch from all APIs even if some fail
+      
       const results = await Promise.allSettled(
         apiConfigsList.map(async (config) => {
           const apiRootVal = getApiRootUrl(config.id);
@@ -292,17 +292,17 @@ const TopologyPage: NextPage = () => {
       return;
     }
 
-    const serverX_out = serverNode.position.x + NODE_WIDTH; // Lines from right-middle of server
+    const serverX_out = serverNode.position.x + NODE_WIDTH; 
     const serverY_out = serverNode.position.y + NODE_HEIGHT_SERVER / 2;
 
     connectedClients.forEach(client => {
       const clientEl = nodeRefs.current.get(`client-${client.id}`);
       if (!clientEl) return;
 
-      const clientX_in = client.position.x; // Lines to left-middle of client
+      const clientX_in = client.position.x; 
       const clientY_in = client.position.y + NODE_HEIGHT_CLIENT / 2;
 
-      // Control points for a quadratic Bezier curve
+      
       const controlPointX1 = serverX_out + Math.abs(clientX_in - serverX_out) * 0.5;
       const controlPointY1 = serverY_out;
       const controlPointX2 = clientX_in - Math.abs(clientX_in - serverX_out) * 0.5;
@@ -360,7 +360,7 @@ const TopologyPage: NextPage = () => {
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>, nodeId: string, nodeType: 'server' | 'client') => {
-    didDragRef.current = false; // Reset drag flag
+    didDragRef.current = false; 
     e.preventDefault();
     e.stopPropagation(); 
 
@@ -390,7 +390,7 @@ const TopologyPage: NextPage = () => {
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (!draggingNodeInfo || !canvasRef.current || viewMode !== 'graph') return;
     e.preventDefault();
-    didDragRef.current = true; // Set drag flag if mouse moves
+    didDragRef.current = true; 
 
     const canvasRect = canvasRef.current.getBoundingClientRect();
     const mouseXInCanvas = e.clientX - canvasRect.left + canvasRef.current.scrollLeft;
@@ -422,7 +422,7 @@ const TopologyPage: NextPage = () => {
 
   const handleMouseUp = useCallback(() => {
     setDraggingNodeInfo(null);
-    // didDragRef is reset by the onClick handler
+    
   }, []);
 
   useEffect(() => {
@@ -497,18 +497,11 @@ const TopologyPage: NextPage = () => {
           {isServer && (node as ServerNode).serverListeningAddress && (
             <p className="truncate" title={(node as ServerNode).serverListeningAddress!}>监听: <span className="font-mono">{(node as ServerNode).serverListeningAddress}</span></p>
           )}
-           {isServer && (node as ServerNode).serverForwardsToAddress && (
-            <p className="truncate" title={(node as ServerNode).serverForwardsToAddress!}>转发至: <span className="font-mono">{(node as ServerNode).serverForwardsToAddress}</span></p>
-          )}
+          
           {!isServer && (node as ClientNode).localTargetAddress && (
              <p className="truncate text-green-600 dark:text-green-400" title={(node as ClientNode).localTargetAddress!}>
               <Link2 className="inline-block h-3 w-3 mr-1"/>
               落地: <span className="font-mono">{(node as ClientNode).localTargetAddress}</span>
-            </p>
-          )}
-           {!isServer && (node as ClientNode).clientConnectsToServerAddress && (
-            <p className="truncate" title={(node as ClientNode).clientConnectsToServerAddress!}>
-              连接至: <span className="font-mono">{(node as ClientNode).clientConnectsToServerAddress}</span>
             </p>
           )}
         </div>
@@ -678,4 +671,3 @@ const TopologyPage: NextPage = () => {
 
 export default TopologyPage;
 
-    
